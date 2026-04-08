@@ -1,0 +1,22 @@
+[Unit]
+Description=TikTok Downloader Telegram Bot
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/tiktok-bot
+ExecStart=/opt/tiktok-bot/venv/bin/python -m bot.main
+Restart=always
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+
+# Security
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
