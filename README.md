@@ -319,3 +319,54 @@ MIT License - свободное использование
 ---
 
 **Сделано с ❤️ для удобства скачивания TikTok видео**
+## Docker Deploy
+
+This bot uses Telegram long polling, so it does not expose any HTTP port and can run alongside other Docker containers without port conflicts.
+
+### 1. Prepare `.env`
+
+```bash
+cp .env.example .env
+```
+
+Set at least:
+
+```env
+BOT_TOKEN=your_bot_token
+CACHE_CHANNEL_ID=-1001234567890
+```
+
+### 2. Build and start
+
+```bash
+docker compose up -d --build
+```
+
+### 3. Check logs
+
+```bash
+docker compose logs -f tiktok-bot
+```
+
+### 4. Restart after updates
+
+```bash
+docker compose up -d --build
+```
+
+### 5. Stop
+
+```bash
+docker compose down
+```
+
+### Persistent data
+
+- `./data` stores SQLite database
+- `./downloads` stores temporary media between download/send/cleanup
+
+### Notes for VPS
+
+- No ports are published by default
+- `restart: unless-stopped` is already enabled
+- Safe to run next to other containers behind the same Docker engine

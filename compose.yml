@@ -1,0 +1,13 @@
+services:
+  tiktok-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: tiktok-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./downloads:/app/downloads
+    init: true

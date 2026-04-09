@@ -83,6 +83,9 @@ class FileManager:
             for file_path in files:
                 if file_path.is_file():
                     try:
+                        if file_path.name.startswith('.'):
+                            continue
+
                         # Get file modification time
                         file_mtime = file_path.stat().st_mtime
                         age_seconds = current_time - file_mtime
@@ -102,6 +105,30 @@ class FileManager:
             
         except Exception as e:
             logger.error(f"Cleanup task failed: {e}")
+            return 0
+
+    async def cleanup_all_files(self) -> int:
+        """Delete all temporary downloaded files immediately."""
+        try:
+            loop = asyncio.get_event_loop()
+            deleted_count = 0
+            files = await loop.run_in_executor(
+                None,
+                lambda: list(self.downloads_path.glob('*'))
+            )
+
+            for file_path in files:
+                if file_path.is_file() and not file_path.name.startswith('.'):
+                    try:
+                        await loop.run_in_executor(None, os.remove, str(file_path))
+                        deleted_count += 1
+                        logger.info(f"Deleted startup temp file: {file_path.name}")
+                    except Exception as e:
+                        logger.error(f"Failed to delete startup file {file_path}: {e}")
+
+            return deleted_count
+        except Exception as e:
+            logger.error(f"Startup cleanup failed: {e}")
             return 0
     
     async def get_directory_size(self) -> int:

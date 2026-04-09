@@ -62,6 +62,10 @@ async def main():
             cleanup_interval_minutes=Config.FILE_CLEANUP_INTERVAL
         )
         logger.info("File manager initialized")
+
+        deleted_on_startup = await file_manager.cleanup_all_files()
+        if deleted_on_startup:
+            logger.info(f"Startup cleanup removed {deleted_on_startup} temp files")
         
         # Register routers
         dp.include_router(command_router)

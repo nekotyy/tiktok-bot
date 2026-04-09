@@ -7,6 +7,7 @@ from aiogram import Router, F
 from aiogram.types import Message
 from aiogram.filters import Command, CommandStart
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile, InputMediaPhoto
+from aiogram.utils.chat_action import ChatActionSender
 
 from ..database.db import Database
 from ..utils.formatters import (
@@ -271,6 +272,20 @@ async def _send_photo_reply(message: Message, file_paths: list[str]):
             await message.reply_document(document=media_file)
 
 
+async def _delete_source_message(message: Message):
+    """Delete original message with TikTok link when bot has permission."""
+    try:
+        await message.delete()
+        logger.info(f"Deleted source message {message.message_id} in chat {message.chat.id}")
+    except Exception as e:
+        logger.info(
+            "Could not delete source message %s in chat %s: %s",
+            message.message_id,
+            message.chat.id,
+            e,
+        )
+
+
 @command_router.message(
     F.text.regexp(r'https?://(?:www\.|m\.|vm\.|vt\.)?tiktok\.com/[^\s]+')
     | F.caption.regexp(r'https?://(?:www\.|m\.|vm\.|vt\.)?tiktok\.com/[^\s]+')
@@ -304,14 +319,17 @@ async def handle_tiktok_url(
         last_name=message.from_user.last_name
     )
 
-    status_msg = await message.reply("Скачиваю медиа...")
-
     try:
-        download_result = await downloader.download_media(video_url)
+        async with ChatActionSender.typing(
+            bot=message.bot,
+            chat_id=message.chat.id,
+            message_thread_id=message.message_thread_id,
+        ):
+            download_result = await downloader.download_media(video_url)
 
         if not download_result["success"]:
             error_msg = download_result.get("error", "Не удалось скачать медиа")
-            await status_msg.edit_text(f"Ошибка: {error_msg}")
+            await message.reply(f"Ошибка: {error_msg}")
             await db.log_download(
                 user_id=user_id,
                 video_url=video_url,
@@ -325,18 +343,26 @@ async def handle_tiktok_url(
 
         if download_result.get("media_type") == "photo":
             file_paths = download_result.get("file_paths", [])
-            await _send_photo_reply(message, file_paths)
+            async with ChatActionSender.upload_photo(
+                bot=message.bot,
+                chat_id=message.chat.id,
+                message_thread_id=message.message_thread_id,
+            ):
+                await _send_photo_reply(message, file_paths)
             await file_manager.delete_files(file_paths)
         else:
             file_path = download_result["file_path"]
             video_file = FSInputFile(file_path)
-            await message.reply_video(
-                video=video_file,
-                supports_streaming=True
-            )
+            async with ChatActionSender.upload_video(
+                bot=message.bot,
+                chat_id=message.chat.id,
+                message_thread_id=message.message_thread_id,
+            ):
+                await message.reply_video(
+                    video=video_file,
+                    supports_streaming=True
+                )
             await file_manager.delete_file(file_path)
-
-        await status_msg.delete()
 
         await db.log_download(
             user_id=user_id,
@@ -346,11 +372,13 @@ async def handle_tiktok_url(
             duration=duration
         )
 
+        await _delete_source_message(message)
+
         logger.info(f"Media sent to user {user_id} (direct message)")
         return
     except Exception as e:
         logger.error(f"Error handling TikTok URL: {e}")
-        await status_msg.edit_text("Произошла ошибка при скачивании")
+        await message.reply("Произошла ошибка при скачивании")
         return
     
     # Extract and validate URL
