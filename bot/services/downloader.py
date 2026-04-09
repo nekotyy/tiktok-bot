@@ -12,6 +12,10 @@ from urllib.request import Request, urlopen
 from uuid import uuid4
 
 import yt_dlp
+try:
+    from gallery_dl.job import DataJob
+except ImportError:  # pragma: no cover - optional dependency fallback
+    DataJob = None
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +117,7 @@ class TikTokDownloader:
 
     async def download_media(self, url: str) -> Dict[str, Any]:
         """Download TikTok media for direct chats and groups."""
-        url = self._prepare_url(url)
+        url = self._resolve_tiktok_url(url)
         media_id = str(uuid4())
 
         try:
@@ -232,7 +236,8 @@ class TikTokDownloader:
     def _download_media_sync(self, url: str, media_id: str) -> Dict[str, Any]:
         """Download either video or image media."""
         try:
-            info = self._extract_info(url)
+            ytdlp_url = self._convert_photo_url_to_video_url(url)
+            info = self._extract_info(ytdlp_url)
 
             if not info:
                 return {
@@ -242,12 +247,14 @@ class TikTokDownloader:
 
             if self._has_video_formats(info):
                 output_path = str(self.downloads_path / f"{media_id}.mp4")
-                result = self._download_sync(url, output_path)
+                result = self._download_sync(ytdlp_url, output_path)
                 if result.get('success'):
                     result['media_type'] = 'video'
                 return result
 
-            photo_urls = self._collect_photo_urls(info)
+            photo_urls = self._collect_photo_urls_with_gallery_dl(url)
+            if not photo_urls:
+                photo_urls = self._collect_photo_urls(info)
             if photo_urls:
                 return self._download_photos_sync(info, photo_urls, media_id)
 
@@ -335,6 +342,35 @@ class TikTokDownloader:
                 continue
             urls.append(image_url)
             seen.add(image_url)
+
+        return urls
+
+    def _collect_photo_urls_with_gallery_dl(self, url: str) -> List[str]:
+        """Collect photo post image URLs using gallery-dl."""
+        if DataJob is None:
+            return []
+
+        try:
+            job = DataJob(url, file=None)
+            job.run()
+        except Exception as e:
+            logger.warning(f"gallery-dl extraction failed for {url}: {e}")
+            return []
+
+        urls: List[str] = []
+        seen = set()
+
+        for index, media_url in enumerate(job.data_urls):
+            if not media_url or media_url in seen:
+                continue
+
+            meta = job.data_meta[index] if index < len(job.data_meta) else {}
+            extension = str(meta.get('extension') or '').lower().lstrip('.')
+            if extension not in {'jpg', 'jpeg', 'png', 'webp'}:
+                continue
+
+            urls.append(media_url)
+            seen.add(media_url)
 
         return urls
 
