@@ -24,6 +24,9 @@ class Config:
     # File settings
     MAX_FILE_SIZE_MB: int = int(os.getenv('MAX_FILE_SIZE_MB', '50'))
     MAX_FILE_SIZE_BYTES: int = MAX_FILE_SIZE_MB * 1024 * 1024
+
+    # YouTube Shorts max duration (seconds) — reject regular videos
+    YOUTUBE_SHORTS_MAX_DURATION: int = 61
     
     # Cleanup settings
     FILE_CLEANUP_INTERVAL: int = int(os.getenv('FILE_CLEANUP_INTERVAL', '10'))

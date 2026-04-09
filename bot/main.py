@@ -11,7 +11,7 @@ from aiogram.client.default import DefaultBotProperties
 
 from bot.config import Config
 from bot.database.db import Database
-from bot.services.downloader import TikTokDownloader
+from bot.services.downloader import MediaDownloader
 from bot.services.file_manager import FileManager
 from bot.handlers.commands import command_router
 from bot.handlers.inline import inline_router
@@ -51,7 +51,7 @@ async def main():
         logger.info("Database initialized")
         
         # Initialize services
-        downloader = TikTokDownloader(
+        downloader = MediaDownloader(
             downloads_path=Config.DOWNLOADS_PATH,
             max_file_size_bytes=Config.MAX_FILE_SIZE_BYTES
         )

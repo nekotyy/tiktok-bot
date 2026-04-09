@@ -5,11 +5,11 @@ from typing import Optional
 
 def validate_file_size(file_size: int, max_size_bytes: int) -> tuple[bool, Optional[str]]:
     """Validate file size.
-    
+
     Args:
         file_size: File size in bytes
         max_size_bytes: Maximum allowed size in bytes
-        
+
     Returns:
         Tuple of (is_valid, error_message)
     """
@@ -18,22 +18,3 @@ def validate_file_size(file_size: int, max_size_bytes: int) -> tuple[bool, Optio
         actual_mb = file_size / (1024 * 1024)
         return False, f"Видео слишком большое ({actual_mb:.1f} МБ). Максимум: {max_mb:.0f} МБ"
     return True, None
-
-
-def format_file_size(size_bytes: int) -> str:
-    """Format file size in human-readable format.
-    
-    Args:
-        size_bytes: Size in bytes
-        
-    Returns:
-        Formatted string (e.g., "12.5 МБ")
-    """
-    if size_bytes < 1024:
-        return f"{size_bytes} Б"
-    elif size_bytes < 1024 * 1024:
-        return f"{size_bytes / 1024:.1f} КБ"
-    elif size_bytes < 1024 * 1024 * 1024:
-        return f"{size_bytes / (1024 * 1024):.1f} МБ"
-    else:
-        return f"{size_bytes / (1024 * 1024 * 1024):.1f} ГБ"

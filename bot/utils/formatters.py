@@ -40,41 +40,63 @@ def format_duration(seconds: Optional[int]) -> str:
     return f"{minutes}:{secs:02d}"
 
 
-def format_time_ago(timestamp: Optional[str]) -> str:
-    """Format timestamp as relative time.
-    
-    Args:
-        timestamp: ISO timestamp string
-        
-    Returns:
-        Relative time string (e.g., "2 часа назад")
-    """
-    if not timestamp:
-        return "никогда"
-    
+def _pluralize(n: int, one: str, few: str, many: str) -> str:
+    """Russian pluralization helper."""
+    mod10 = n % 10
+    mod100 = n % 100
+    if mod100 in (11, 12, 13, 14):
+        return many
+    if mod10 == 1:
+        return one
+    if mod10 in (2, 3, 4):
+        return few
+    return many
+
+
+def _parse_timestamp(ts: str) -> Optional[datetime]:
+    """Parse SQLite timestamp (handles both 'T' and space separators)."""
+    if not ts:
+        return None
     try:
-        dt = datetime.fromisoformat(timestamp)
-        now = datetime.now()
-        diff = now - dt
-        
-        if diff.days > 365:
-            years = diff.days // 365
-            return f"{years} {'год' if years == 1 else 'лет'} назад"
-        elif diff.days > 30:
-            months = diff.days // 30
-            return f"{months} {'месяц' if months == 1 else 'месяцев'} назад"
-        elif diff.days > 0:
-            return f"{diff.days} {'день' if diff.days == 1 else 'дней'} назад"
-        elif diff.seconds > 3600:
-            hours = diff.seconds // 3600
-            return f"{hours} {'час' if hours == 1 else 'часов'} назад"
-        elif diff.seconds > 60:
-            minutes = diff.seconds // 60
-            return f"{minutes} {'минуту' if minutes == 1 else 'минут'} назад"
-        else:
-            return "только что"
+        # Python 3.11+ handles space separator natively
+        return datetime.fromisoformat(ts)
+    except ValueError:
+        pass
+    # Fallback: replace space with T for older Python
+    try:
+        return datetime.fromisoformat(ts.replace(' ', 'T'))
     except Exception:
-        return "неизвестно"
+        return None
+
+
+def format_time_ago(timestamp: Optional[str]) -> str:
+    """Format timestamp as relative time."""
+    dt = _parse_timestamp(timestamp)
+    if dt is None:
+        return "никогда"
+
+    now = datetime.now()
+    diff = now - dt
+
+    if diff.total_seconds() < 0:
+        return "только что"
+
+    if diff.days > 365:
+        years = diff.days // 365
+        return f"{years} {_pluralize(years, 'год', 'года', 'лет')} назад"
+    elif diff.days > 30:
+        months = diff.days // 30
+        return f"{months} {_pluralize(months, 'месяц', 'месяца', 'месяцев')} назад"
+    elif diff.days > 0:
+        return f"{diff.days} {_pluralize(diff.days, 'день', 'дня', 'дней')} назад"
+    elif diff.seconds >= 3600:
+        hours = diff.seconds // 3600
+        return f"{hours} {_pluralize(hours, 'час', 'часа', 'часов')} назад"
+    elif diff.seconds >= 60:
+        minutes = diff.seconds // 60
+        return f"{minutes} {_pluralize(minutes, 'минуту', 'минуты', 'минут')} назад"
+    else:
+        return "только что"
 
 
 def format_stats_message(stats: dict) -> str:
@@ -92,7 +114,7 @@ def format_stats_message(stats: dict) -> str:
     member_since = stats.get('member_since')
     
     message = "📊 Ваша статистика:\n\n"
-    message += f"✅ Скачано видео: {total_downloads}\n"
+    message += f"✅ Скачано: {total_downloads}\n"
     message += f"📦 Общий размер: {format_file_size(total_size)}\n"
     
     if member_since:
@@ -111,13 +133,13 @@ def format_start_message() -> str:
         Welcome message
     """
     return (
-        "👋 Привет! Я помогу скачать видео из TikTok без водяных знаков.\n\n"
+        "👋 Привет! Я помогу скачать видео из TikTok и YouTube Shorts.\n\n"
         "🎬 Два способа использования:\n\n"
         "1️⃣ Через inline-режим (в любом чате):\n"
         "   • Напишите @luxsittbot и ссылку\n"
         "   • Видео появится прямо в чате!\n\n"
         "2️⃣ Просто отправьте ссылку мне:\n"
-        "   • Вставьте ссылку на TikTok\n"
+        "   • Вставьте ссылку на TikTok или YouTube Shorts\n"
         "   • Получите видео сразу здесь!\n\n"
         "💡 Попробуйте прямо сейчас - просто отправьте ссылку!\n\n"
         "Команды:\n"
@@ -135,7 +157,7 @@ def format_help_message() -> str:
     return (
         "📖 Подробная инструкция\n\n"
         "🎯 Способ 1: Прямо в личке (быстрее)\n"
-        "   Просто отправьте мне ссылку на TikTok!\n"
+        "   Отправьте мне ссылку на TikTok или YouTube Shorts!\n"
         "   Видео скачается и придёт прямо сюда.\n\n"
         "🎯 Способ 2: Через inline-режим (в любом чате)\n"
         "   1. Откройте любой чат (даже группу!)\n"
@@ -146,9 +168,12 @@ def format_help_message() -> str:
         "• https://www.tiktok.com/@user/video/123\n"
         "• https://vm.tiktok.com/xxx (короткие)\n"
         "• https://vt.tiktok.com/xxx\n"
-        "• https://m.tiktok.com/v/123\n\n"
+        "• https://m.tiktok.com/v/123\n"
+        "• https://www.youtube.com/shorts/xxxxx\n"
+        "• https://youtu.be/xxxxx\n\n"
         "⚡ Особенности:\n"
-        "• Без водяных знаков\n"
+        "• TikTok — без водяных знаков\n"
+        "• YouTube Shorts — только шорты (до 60 сек)\n"
         "• Высокое качество\n"
         "• Быстрая загрузка\n"
         "• Работает в группах и каналах!\n\n"
@@ -157,6 +182,9 @@ def format_help_message() -> str:
         "A: Проверьте правильность ссылки\n\n"
         "Q: Видео слишком большое?\n"
         "A: Telegram ограничивает размер до 50 МБ\n\n"
+        "Q: Обычное YouTube видео не грузится?\n"
+        "A: Бот скачивает только YouTube Shorts (до 60 сек),\n"
+        "   чтобы не перегружать сервер\n\n"
         "Q: Видео недоступно?\n"
         "A: Возможно, автор удалил видео или сделал аккаунт приватным\n\n"
         "💬 Команды:\n"
