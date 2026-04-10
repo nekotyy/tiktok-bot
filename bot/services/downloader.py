@@ -298,7 +298,14 @@ class MediaDownloader:
     def _resolve_tiktok_url(self, url: str) -> str:
         try:
             parsed = urlparse(url)
-            if (parsed.netloc or '').lower() not in {'vm.tiktok.com', 'vt.tiktok.com'}:
+            hostname = (parsed.netloc or '').lower()
+
+            # Short URLs that need redirect resolution
+            is_short = (
+                hostname in {'vm.tiktok.com', 'vt.tiktok.com'}
+                or (hostname == 'www.tiktok.com' and parsed.path.startswith('/t/'))
+            )
+            if not is_short:
                 return url
 
             request = Request(
