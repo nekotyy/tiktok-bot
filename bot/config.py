@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+from typing import Set
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -20,6 +21,9 @@ class Config:
     
     # Cache channel ID for inline mode (optional)
     CACHE_CHANNEL_ID: int = int(os.getenv('CACHE_CHANNEL_ID', '0')) if os.getenv('CACHE_CHANNEL_ID') else 0
+
+    # Chat/channel whitelist. Empty means "allow everywhere".
+    ALLOWED_CHAT_IDS: Set[int] = set()
     
     # File settings
     MAX_FILE_SIZE_MB: int = int(os.getenv('MAX_FILE_SIZE_MB', '50'))
@@ -39,6 +43,28 @@ class Config:
     # Rate limiting
     RATE_LIMIT_REQUESTS: int = 10  # requests per minute
     RATE_LIMIT_PERIOD: int = 60   # seconds
+
+    @staticmethod
+    def _parse_id_list(raw_value: str) -> Set[int]:
+        """Parse comma/newline/space separated Telegram IDs."""
+        if not raw_value:
+            return set()
+
+        allowed_ids: Set[int] = set()
+        normalized = raw_value.replace('\n', ',').replace(';', ',').replace(' ', ',')
+        for item in normalized.split(','):
+            value = item.strip()
+            if not value:
+                continue
+            allowed_ids.add(int(value))
+        return allowed_ids
+
+    @classmethod
+    def is_chat_allowed(cls, chat_id: int) -> bool:
+        """Return True when the chat is allowed to use the bot."""
+        if not cls.ALLOWED_CHAT_IDS:
+            return True
+        return chat_id in cls.ALLOWED_CHAT_IDS
     
     @classmethod
     def validate(cls) -> bool:
@@ -50,6 +76,7 @@ class Config:
 
 # Validate config on import
 try:
+    Config.ALLOWED_CHAT_IDS = Config._parse_id_list(os.getenv('ALLOWED_CHAT_IDS', ''))
     Config.validate()
 except ValueError as e:
     print(f"Configuration error: {e}")

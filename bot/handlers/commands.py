@@ -2,6 +2,7 @@
 
 import logging
 from pathlib import Path
+from typing import Optional
 
 from aiogram import Router, F
 from aiogram.types import (
@@ -15,6 +16,7 @@ from aiogram.types import (
 from aiogram.filters import Command, CommandStart
 from aiogram.utils.chat_action import ChatActionSender
 
+from ..config import Config
 from ..database.db import Database
 from ..services.downloader import MediaDownloader
 from ..services.file_manager import FileManager
@@ -28,6 +30,51 @@ from ..utils.formatters import (
 logger = logging.getLogger(__name__)
 
 command_router = Router()
+
+
+def _get_requester_id(message: Message) -> int:
+    """Return the user/channel identifier associated with the message."""
+    if message.from_user:
+        return message.from_user.id
+    if message.sender_chat:
+        return message.sender_chat.id
+    return message.chat.id
+
+
+def _get_requester_profile(
+    message: Message,
+) -> tuple[int, Optional[str], Optional[str], Optional[str]]:
+    """Build a database-friendly profile for users, groups, and channels."""
+    requester_id = _get_requester_id(message)
+
+    if message.from_user:
+        return (
+            requester_id,
+            message.from_user.username,
+            message.from_user.first_name,
+            message.from_user.last_name,
+        )
+
+    chat = message.sender_chat or message.chat
+    return (
+        requester_id,
+        getattr(chat, "username", None),
+        getattr(chat, "title", None),
+        None,
+    )
+
+
+async def _ensure_chat_allowed(message: Message) -> bool:
+    """Allow processing only in whitelisted chats/channels."""
+    if Config.is_chat_allowed(message.chat.id):
+        return True
+
+    logger.info(
+        "Ignoring message from non-whitelisted chat %s (%s)",
+        message.chat.id,
+        message.chat.type,
+    )
+    return False
 
 
 def get_main_keyboard() -> InlineKeyboardMarkup:
@@ -53,6 +100,9 @@ def get_back_keyboard() -> InlineKeyboardMarkup:
 
 @command_router.message(CommandStart())
 async def cmd_start(message: Message, db: Database):
+    if not await _ensure_chat_allowed(message):
+        return
+
     await db.add_user(
         user_id=message.from_user.id,
         username=message.from_user.username,
@@ -68,6 +118,9 @@ async def cmd_start(message: Message, db: Database):
 
 @command_router.message(Command("help"))
 async def cmd_help(message: Message):
+    if not await _ensure_chat_allowed(message):
+        return
+
     await message.answer(
         text=format_help_message(),
         reply_markup=get_back_keyboard(),
@@ -76,6 +129,9 @@ async def cmd_help(message: Message):
 
 @command_router.message(Command("stats"))
 async def cmd_stats(message: Message, db: Database):
+    if not await _ensure_chat_allowed(message):
+        return
+
     stats = await db.get_user_stats(message.from_user.id)
     if stats is None:
         await message.answer(
@@ -220,6 +276,10 @@ URL_PATTERN = (
     F.text.regexp(URL_PATTERN)
     | F.caption.regexp(URL_PATTERN)
 )
+@command_router.channel_post(
+    F.text.regexp(URL_PATTERN)
+    | F.caption.regexp(URL_PATTERN)
+)
 async def handle_media_url(
     message: Message,
     db: Database,
@@ -227,7 +287,10 @@ async def handle_media_url(
     file_manager: FileManager,
 ):
     """Handle TikTok and YouTube Shorts URLs sent directly to the bot."""
-    user_id = message.from_user.id
+    if not await _ensure_chat_allowed(message):
+        return
+
+    user_id, username, first_name, last_name = _get_requester_profile(message)
     text = message.text or message.caption or ""
 
     parsed = URLParser.extract_and_validate(text)
@@ -239,14 +302,18 @@ async def handle_media_url(
 
     await db.add_user(
         user_id=user_id,
-        username=message.from_user.username,
-        first_name=message.from_user.first_name,
-        last_name=message.from_user.last_name,
+        username=username,
+        first_name=first_name,
+        last_name=last_name,
     )
 
     platform_label = "TikTok" if parsed.platform == Platform.TIKTOK else "YouTube Short"
     logger.info(
-        f"User {user_id} requested {platform_label}: {parsed.normalized_url}"
+        "Requester %s in chat %s requested %s: %s",
+        user_id,
+        message.chat.id,
+        platform_label,
+        parsed.normalized_url,
     )
 
     try:
@@ -306,7 +373,12 @@ async def handle_media_url(
         )
 
         await _delete_source_message(message)
-        logger.info(f"{platform_label} sent to user {user_id} (direct message)")
+        logger.info(
+            "%s sent back to chat %s for requester %s",
+            platform_label,
+            message.chat.id,
+            user_id,
+        )
 
     except Exception as e:
         logger.error(f"Error handling media URL: {e}")
