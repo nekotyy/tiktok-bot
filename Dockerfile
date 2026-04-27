@@ -13,6 +13,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
+COPY alembic.ini ./alembic.ini
+COPY alembic ./alembic
 COPY bot ./bot
 COPY .env.example ./.env.example
 COPY README.md ./README.md
