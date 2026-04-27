@@ -143,15 +143,15 @@ def _display_name(entry: dict) -> str:
 def format_top_message(top_entries: list[dict]) -> str:
     """Format top usage leaderboard."""
     if not top_entries:
-        return "рџЏ† РџРѕРєР° РЅРµС‚ РґР°РЅРЅС‹С… РґР»СЏ С‚РѕРїР°."
+        return "\u041F\u043E\u043A\u0430 \u043D\u0435\u0442 \u0434\u0430\u043D\u043D\u044B\u0445 \u0434\u043B\u044F \u0442\u043E\u043F\u0430."
 
-    lines = ["рџЏ† РўРѕРї РїРѕ РёСЃРїРѕР»СЊР·РѕРІР°РЅРёСЋ:\n"]
+    lines = ["\u0422\u043E\u043F \u043F\u043E \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u043D\u0438\u044E:\n"]
     for index, entry in enumerate(top_entries, start=1):
         downloads = entry.get('total_downloads', 0)
         lines.append(
-            f"{index}. {_display_name(entry)} вЂ” "
+            f"{index}. {_display_name(entry)} - "
             f"{downloads} "
-            f"{_pluralize(downloads, 'СЃРєР°С‡РёРІР°РЅРёРµ', 'СЃРєР°С‡РёРІР°РЅРёСЏ', 'СЃРєР°С‡РёРІР°РЅРёР№')}"
+            f"{_pluralize(downloads, '\u0441\u043A\u0430\u0447\u0438\u0432\u0430\u043D\u0438\u0435', '\u0441\u043A\u0430\u0447\u0438\u0432\u0430\u043D\u0438\u044F', '\u0441\u043A\u0430\u0447\u0438\u0432\u0430\u043D\u0438\u0439')}"
         )
 
     return "\n".join(lines)
