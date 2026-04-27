@@ -11,6 +11,7 @@ from aiogram.client.default import DefaultBotProperties
 
 from bot.config import Config
 from bot.database.db import Database
+from bot.database.migrations import upgrade_database
 from bot.services.downloader import MediaDownloader
 from bot.services.file_manager import FileManager
 from bot.handlers.commands import command_router
@@ -46,8 +47,10 @@ async def main():
         dp = Dispatcher()
         
         # Initialize database
+        upgrade_database()
+        logger.info("Database migrations applied")
+
         db = Database(Config.DATABASE_PATH)
-        await db.init_db()
         logger.info("Database initialized")
         
         # Initialize services

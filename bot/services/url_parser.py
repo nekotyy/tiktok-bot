@@ -95,7 +95,7 @@ class URLParser:
         match = re.search(combined_pattern, text, re.IGNORECASE)
         if match:
             url = match.group(0)
-            url = url.rstrip('.,;:!?)]}')
+            url = url.rstrip('.,;:!?)]}>')
             return url
 
         return None

@@ -25,6 +25,7 @@ from ..utils.formatters import (
     format_start_message,
     format_help_message,
     format_stats_message,
+    format_top_message,
 )
 
 logger = logging.getLogger(__name__)
@@ -128,11 +129,12 @@ async def cmd_help(message: Message):
 
 
 @command_router.message(Command("stats"))
+@command_router.channel_post(Command("stats"))
 async def cmd_stats(message: Message, db: Database):
     if not await _ensure_chat_allowed(message):
         return
 
-    stats = await db.get_user_stats(message.from_user.id)
+    stats = await db.get_user_stats(_get_requester_id(message))
     if stats is None:
         await message.answer(
             text="❌ Не удалось получить статистику. Попробуйте позже.",
@@ -141,6 +143,19 @@ async def cmd_stats(message: Message, db: Database):
         return
     await message.answer(
         text=format_stats_message(stats),
+        reply_markup=get_back_keyboard(),
+    )
+
+
+@command_router.message(Command("top"))
+@command_router.channel_post(Command("top"))
+async def cmd_top(message: Message, db: Database):
+    if not await _ensure_chat_allowed(message):
+        return
+
+    top_entries = await db.get_top_users(limit=10)
+    await message.answer(
+        text=format_top_message(top_entries),
         reply_markup=get_back_keyboard(),
     )
 

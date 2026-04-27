@@ -398,7 +398,7 @@ class MediaDownloader:
         total_size = 0
 
         try:
-            for index, photo_url in enumerate(photo_urls[:10], start=1):
+            for index, photo_url in enumerate(photo_urls, start=1):
                 file_path = self._download_photo_file(photo_url, media_id, index)
                 if not file_path:
                     continue

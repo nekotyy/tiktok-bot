@@ -172,6 +172,7 @@ def _install_stub_modules():
     formatters_module.format_start_message = lambda: "start"
     formatters_module.format_help_message = lambda: "help"
     formatters_module.format_stats_message = lambda stats: f"stats:{stats}"
+    formatters_module.format_top_message = lambda top: f"top:{top}"
     sys.modules["bot.utils.formatters"] = formatters_module
 
 
@@ -371,4 +372,41 @@ class CommandHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(message.deleted)
         self.assertEqual(message.reply_calls, [])
         self.assertEqual(message.reply_video_calls, [])
+
+    async def test_channel_stats_uses_sender_chat_id(self):
+        message = DummyMessage(
+            chat=DummyChat(id=-1001234567890, type="channel", title="My Channel"),
+            text="/stats",
+            sender_chat=DummyChat(id=-1001234567890, type="channel", title="My Channel"),
+        )
+        self.db.get_user_stats.return_value = {"total_downloads": 5}
+
+        await commands.cmd_stats(message, self.db)
+
+        self.db.get_user_stats.assert_awaited_once_with(-1001234567890)
+        self.assertEqual(message.answer_calls[0]["text"], "stats:{'total_downloads': 5}")
+
+    async def test_send_photo_reply_splits_into_albums_of_ten(self):
+        message = DummyMessage(chat=DummyChat(id=-1001234567890, type="channel"))
+        file_paths = [f"downloads/{index}.jpg" for index in range(1, 24)]
+
+        await commands._send_photo_reply(message, file_paths)
+
+        self.assertEqual(len(message.reply_media_group_calls), 3)
+        self.assertEqual(len(message.reply_media_group_calls[0]["media"]), 10)
+        self.assertEqual(len(message.reply_media_group_calls[1]["media"]), 10)
+        self.assertEqual(len(message.reply_media_group_calls[2]["media"]), 3)
+
+    async def test_top_command_returns_leaderboard(self):
+        message = DummyMessage(
+            chat=DummyChat(id=-1001234567890, type="channel", title="My Channel"),
+            text="/top",
+            sender_chat=DummyChat(id=-1001234567890, type="channel", title="My Channel"),
+        )
+        self.db.get_top_users.return_value = [{"user_id": 1, "total_downloads": 7}]
+
+        await commands.cmd_top(message, self.db)
+
+        self.db.get_top_users.assert_awaited_once_with(limit=10)
+        self.assertEqual(message.answer_calls[0]["text"], "top:[{'user_id': 1, 'total_downloads': 7}]")
 

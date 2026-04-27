@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+from urllib.parse import quote
 from typing import Set
 from dotenv import load_dotenv
 
@@ -72,6 +73,13 @@ class Config:
         if not cls.BOT_TOKEN or cls.BOT_TOKEN == 'your_bot_token_here':
             raise ValueError("BOT_TOKEN is not set in .env file")
         return True
+
+    @classmethod
+    def get_database_url(cls) -> str:
+        """Return SQLAlchemy-compatible database URL for Alembic."""
+        db_path = Path(cls.DATABASE_PATH).resolve()
+        normalized_path = db_path.as_posix()
+        return f"sqlite:///{quote(normalized_path, safe='/:')}"
 
 
 # Validate config on import

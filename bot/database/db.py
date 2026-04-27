@@ -213,6 +213,35 @@ class Database:
         except Exception as e:
             logger.error(f"Failed to get global stats: {e}")
             return None
+
+    async def get_top_users(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """Get top users and channels by successful downloads."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                db.row_factory = aiosqlite.Row
+
+                async with db.execute(
+                    """
+                    SELECT
+                        s.user_id,
+                        s.total_downloads,
+                        s.total_size,
+                        s.last_download_at,
+                        u.username,
+                        u.first_name,
+                        u.last_name
+                    FROM statistics s
+                    LEFT JOIN users u ON s.user_id = u.user_id
+                    ORDER BY s.total_downloads DESC, s.total_size DESC, s.last_download_at DESC
+                    LIMIT ?
+                    """,
+                    (limit,)
+                ) as cursor:
+                    rows = await cursor.fetchall()
+                    return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"Failed to get top users: {e}")
+            return []
     
     async def get_recent_downloads(self, user_id: int, limit: int = 10) -> List[Dict[str, Any]]:
         """Get recent downloads for user.

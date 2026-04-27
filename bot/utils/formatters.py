@@ -126,6 +126,37 @@ def format_stats_message(stats: dict) -> str:
     return message
 
 
+def _display_name(entry: dict) -> str:
+    username = entry.get('username')
+    if username:
+        return f"@{username}"
+
+    first_name = (entry.get('first_name') or '').strip()
+    last_name = (entry.get('last_name') or '').strip()
+    full_name = f"{first_name} {last_name}".strip()
+    if full_name:
+        return full_name
+
+    return str(entry.get('user_id', 'unknown'))
+
+
+def format_top_message(top_entries: list[dict]) -> str:
+    """Format top usage leaderboard."""
+    if not top_entries:
+        return "рџЏ† РџРѕРєР° РЅРµС‚ РґР°РЅРЅС‹С… РґР»СЏ С‚РѕРїР°."
+
+    lines = ["рџЏ† РўРѕРї РїРѕ РёСЃРїРѕР»СЊР·РѕРІР°РЅРёСЋ:\n"]
+    for index, entry in enumerate(top_entries, start=1):
+        downloads = entry.get('total_downloads', 0)
+        lines.append(
+            f"{index}. {_display_name(entry)} вЂ” "
+            f"{downloads} "
+            f"{_pluralize(downloads, 'СЃРєР°С‡РёРІР°РЅРёРµ', 'СЃРєР°С‡РёРІР°РЅРёСЏ', 'СЃРєР°С‡РёРІР°РЅРёР№')}"
+        )
+
+    return "\n".join(lines)
+
+
 def format_start_message() -> str:
     """Format start/welcome message.
     
