@@ -410,3 +410,20 @@ class CommandHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.db.get_top_users.assert_awaited_once_with(limit=10)
         self.assertEqual(message.answer_calls[0]["text"], "top:[{'user_id': 1, 'total_downloads': 7}]")
 
+    def test_message_contains_supported_url_with_text_prefix(self):
+        commands.URLParser.extract_and_validate = MagicMock(
+            return_value=SimpleNamespace(
+                platform=commands.Platform.TIKTOK,
+                normalized_url="https://vt.tiktok.com/ZS9k6HCQT/",
+            )
+        )
+        message = DummyMessage(
+            chat=DummyChat(id=-1001234567890),
+            text="Twitch:mafanyaking https://vt.tiktok.com/ZS9k6HCQT/",
+        )
+
+        self.assertTrue(commands._message_contains_supported_url(message))
+        commands.URLParser.extract_and_validate.assert_called_once_with(
+            "Twitch:mafanyaking https://vt.tiktok.com/ZS9k6HCQT/"
+        )
+

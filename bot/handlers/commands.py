@@ -232,6 +232,11 @@ def _is_photo_file(file_path: str) -> bool:
     return Path(file_path).suffix.lower() in {".jpg", ".jpeg", ".png"}
 
 
+def _message_contains_supported_url(message: Message) -> bool:
+    text = message.text or message.caption or ""
+    return URLParser.extract_and_validate(text) is not None
+
+
 async def _send_photo_reply(message: Message, file_paths: list[str]):
     if len(file_paths) == 1:
         file_path = file_paths[0]
@@ -287,14 +292,8 @@ URL_PATTERN = (
 )
 
 
-@command_router.message(
-    F.text.regexp(URL_PATTERN)
-    | F.caption.regexp(URL_PATTERN)
-)
-@command_router.channel_post(
-    F.text.regexp(URL_PATTERN)
-    | F.caption.regexp(URL_PATTERN)
-)
+@command_router.message(_message_contains_supported_url)
+@command_router.channel_post(_message_contains_supported_url)
 async def handle_media_url(
     message: Message,
     db: Database,
