@@ -221,5 +221,6 @@ def format_help_message() -> str:
         "💬 Команды:\n"
         "/start - главное меню\n"
         "/stats - моя статистика\n"
+        "/settings - настройки чата\n"
         "/help - эта справка"
     )

@@ -272,3 +272,67 @@ class Database:
         except Exception as e:
             logger.error(f"Failed to get recent downloads for user {user_id}: {e}")
             return []
+
+    # ── Chat settings ──────────────────────────────────────────────
+
+    async def get_chat_settings(self, chat_id: int) -> Dict[str, Any]:
+        """Get settings for a chat. Returns defaults if not set."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                db.row_factory = aiosqlite.Row
+                async with db.execute(
+                    "SELECT * FROM chat_settings WHERE chat_id = ?",
+                    (chat_id,)
+                ) as cursor:
+                    row = await cursor.fetchone()
+                    if row:
+                        return dict(row)
+        except Exception as e:
+            logger.error(f"Failed to get chat settings for {chat_id}: {e}")
+        return {
+            'chat_id': chat_id,
+            'require_pure_link': False,
+            'delete_source_messages': True,
+            'updated_at': None,
+        }
+
+    async def set_chat_setting(
+        self,
+        chat_id: int,
+        require_pure_link: Optional[bool] = None,
+        delete_source_messages: Optional[bool] = None,
+    ) -> bool:
+        """Update chat settings."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                # Fetch current values to merge
+                async with db.execute(
+                    "SELECT require_pure_link, delete_source_messages FROM chat_settings WHERE chat_id = ?",
+                    (chat_id,)
+                ) as cursor:
+                    row = await cursor.fetchone()
+
+                if row:
+                    current = dict(row)
+                else:
+                    current = {'require_pure_link': False, 'delete_source_messages': True}
+
+                new_require = require_pure_link if require_pure_link is not None else current['require_pure_link']
+                new_delete = delete_source_messages if delete_source_messages is not None else current['delete_source_messages']
+
+                await db.execute(
+                    """
+                    INSERT INTO chat_settings (chat_id, require_pure_link, delete_source_messages, updated_at)
+                    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(chat_id) DO UPDATE SET
+                        require_pure_link = excluded.require_pure_link,
+                        delete_source_messages = excluded.delete_source_messages,
+                        updated_at = excluded.updated_at
+                    """,
+                    (chat_id, int(new_require), int(new_delete))
+                )
+                await db.commit()
+                return True
+        except Exception as e:
+            logger.error(f"Failed to set chat settings for {chat_id}: {e}")
+            return False

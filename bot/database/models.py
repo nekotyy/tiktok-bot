@@ -37,10 +37,19 @@ CREATE TABLE IF NOT EXISTS statistics (
     FOREIGN KEY (user_id) REFERENCES users (user_id)
 );
 
+-- Chat settings table
+CREATE TABLE IF NOT EXISTS chat_settings (
+    chat_id INTEGER PRIMARY KEY,
+    require_pure_link BOOLEAN NOT NULL DEFAULT 0,
+    delete_source_messages BOOLEAN NOT NULL DEFAULT 1,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_downloads_user_id ON downloads(user_id);
 CREATE INDEX IF NOT EXISTS idx_downloads_created_at ON downloads(created_at);
 CREATE INDEX IF NOT EXISTS idx_statistics_user_id ON statistics(user_id);
+CREATE INDEX IF NOT EXISTS idx_chat_settings_chat_id ON chat_settings(chat_id);
 """
 
 

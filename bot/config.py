@@ -25,6 +25,12 @@ class Config:
 
     # Chat/channel whitelist. Empty means "allow everywhere".
     ALLOWED_CHAT_IDS: Set[int] = set()
+
+    # If True, bot works in any chat where it receives messages (any group/channel
+    # where the bot is a member). If False, only ALLOWED_CHAT_IDS are permitted.
+    AUTO_ALLOW_MEMBER_CHATS: bool = (
+        os.getenv('AUTO_ALLOW_MEMBER_CHATS', 'true').lower() in ('1', 'true', 'yes')
+    )
     
     # File settings
     MAX_FILE_SIZE_MB: int = int(os.getenv('MAX_FILE_SIZE_MB', '50'))
@@ -63,6 +69,8 @@ class Config:
     @classmethod
     def is_chat_allowed(cls, chat_id: int) -> bool:
         """Return True when the chat is allowed to use the bot."""
+        if cls.AUTO_ALLOW_MEMBER_CHATS:
+            return True
         if not cls.ALLOWED_CHAT_IDS:
             return True
         return chat_id in cls.ALLOWED_CHAT_IDS

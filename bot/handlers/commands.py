@@ -7,6 +7,8 @@ from typing import Optional
 from aiogram import Router, F
 from aiogram.types import (
     CallbackQuery,
+    ChatMemberAdministrator,
+    ChatMemberOwner,
     FSInputFile,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -97,6 +99,52 @@ def get_back_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+async def _is_chat_admin(message: Message) -> bool:
+    """Check if the user is an admin/owner of the chat. Always True in private."""
+    if message.chat.type == "private":
+        return True
+    try:
+        member = await message.bot.get_chat_member(message.chat.id, message.from_user.id)
+        return isinstance(member, (ChatMemberAdministrator, ChatMemberOwner))
+    except Exception:
+        return False
+
+
+def _is_pure_link_message(text: str) -> bool:
+    """Return True if the message consists only of a URL and whitespace."""
+    import re
+    cleaned = re.sub(
+        r'https?://(?:www\.|m\.|vm\.|vt\.)?tiktok\.com/[^\s]+'
+        r'|https?://(?:www\.)?youtube\.com/shorts/[^\s]+'
+        r'|https?://youtu\.be/[^\s]+',
+        '',
+        text,
+    )
+    return not cleaned.strip()
+
+
+def get_settings_keyboard(settings: dict) -> InlineKeyboardMarkup:
+    require = settings.get('require_pure_link', False)
+    delete_src = settings.get('delete_source_messages', True)
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=("✅ " if require else "❌ ") + "Только чистые ссылки",
+                    callback_data="toggle_require_pure_link",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=("✅ " if delete_src else "❌ ") + "Удалять сообщения со ссылками",
+                    callback_data="toggle_delete_source",
+                )
+            ],
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="start")],
+        ]
+    )
+
+
 # ── Commands ────────────────────────────────────────────────────────
 
 @command_router.message(CommandStart())
@@ -158,6 +206,27 @@ async def cmd_top(message: Message, db: Database):
         text=format_top_message(top_entries),
         reply_markup=get_back_keyboard(),
     )
+
+
+@command_router.message(Command("settings"))
+@command_router.channel_post(Command("settings"))
+async def cmd_settings(message: Message, db: Database):
+    if not await _ensure_chat_allowed(message):
+        return
+
+    if not await _is_chat_admin(message):
+        await message.answer("⚠️ Настройки доступны только администраторам чата.")
+        return
+
+    settings = await db.get_chat_settings(message.chat.id)
+    text = (
+        "⚙️ <b>Настройки чата</b>\n\n"
+        "<b>Только чистые ссылки</b> — бот отвечает только если сообщение "
+        "состоит только из ссылки (без лишнего текста).\n\n"
+        "<b>Удалять сообщения со ссылками</b> — бот удаляет исходное сообщение "
+        "пользователя после отправки видео."
+    )
+    await message.answer(text=text, reply_markup=get_settings_keyboard(settings))
 
 
 # ── Callback queries ────────────────────────────────────────────────
@@ -224,6 +293,28 @@ async def callback_error(callback: CallbackQuery):
         text="❌ Произошла ошибка. Попробуйте позже.",
         show_alert=True,
     )
+
+
+@command_router.callback_query(F.data == "toggle_require_pure_link")
+async def callback_toggle_require_pure_link(callback: CallbackQuery, db: Database):
+    chat_id = callback.message.chat.id
+    settings = await db.get_chat_settings(chat_id)
+    new_value = not settings.get('require_pure_link', False)
+    await db.set_chat_setting(chat_id, require_pure_link=new_value)
+    settings['require_pure_link'] = new_value
+    await callback.message.edit_reply_markup(reply_markup=get_settings_keyboard(settings))
+    await callback.answer()
+
+
+@command_router.callback_query(F.data == "toggle_delete_source")
+async def callback_toggle_delete_source(callback: CallbackQuery, db: Database):
+    chat_id = callback.message.chat.id
+    settings = await db.get_chat_settings(chat_id)
+    new_value = not settings.get('delete_source_messages', True)
+    await db.set_chat_setting(chat_id, delete_source_messages=new_value)
+    settings['delete_source_messages'] = new_value
+    await callback.message.edit_reply_markup(reply_markup=get_settings_keyboard(settings))
+    await callback.answer()
 
 
 # ── Direct URL handler (TikTok + YouTube Shorts) ────────────────────
@@ -314,6 +405,15 @@ async def handle_media_url(
         )
         return
 
+    chat_settings = await db.get_chat_settings(message.chat.id)
+
+    if chat_settings.get('require_pure_link') and not _is_pure_link_message(text):
+        logger.info(
+            "Skipping non-pure link message in chat %s (require_pure_link is on)",
+            message.chat.id,
+        )
+        return
+
     await db.add_user(
         user_id=user_id,
         username=username,
@@ -386,7 +486,8 @@ async def handle_media_url(
             duration=duration,
         )
 
-        await _delete_source_message(message)
+        if chat_settings.get('delete_source_messages'):
+            await _delete_source_message(message)
         logger.info(
             "%s sent back to chat %s for requester %s",
             platform_label,

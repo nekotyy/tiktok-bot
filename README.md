@@ -1,372 +1,258 @@
-# TikTok Downloader Bot 🎬
+<div align="center">
+  <h1>TikTok Downloader Bot</h1>
+  <p><strong>Telegram-бот для скачивания видео из TikTok и YouTube Shorts без водяных знаков</strong></p>
 
-Telegram бот для скачивания видео из TikTok без водяных знаков с поддержкой inline режима.
+  <p>
+    <a href="#"><img src="https://img.shields.io/badge/python-3.10%2B-blue.svg?style=flat-square&amp;logo=python&amp;logoColor=white" alt="Python 3.10+"></a>
+    <a href="#"><img src="https://img.shields.io/badge/aiogram-3.x-2CA5E0.svg?style=flat-square&amp;logo=telegram&amp;logoColor=white" alt="Aiogram 3"></a>
+    <a href="#"><img src="https://img.shields.io/badge/docker-ready-2496ED.svg?style=flat-square&amp;logo=docker&amp;logoColor=white" alt="Docker"></a>
+    <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License: MIT"></a>
+  </p>
 
-## 🌟 Особенности
+  <p>
+    <a href="#возможности">Возможности</a> •
+    <a href="#быстрый-старт">Быстрый старт</a> •
+    <a href="#конфигурация">Конфигурация</a> •
+    <a href="#команды">Команды</a> •
+    <a href="#настройки-чата">Настройки</a> •
+    <a href="#разработка">Разработка</a>
+  </p>
+</div>
 
-- ✅ **Inline режим** - работает в любом чате без добавления бота
-- ✅ **Без водяных знаков** - скачивает чистое видео
-- ✅ **Высокое качество** - максимально доступное качество
-- ✅ **Автоочистка** - файлы удаляются автоматически после отправки
-- ✅ **Статистика** - отслеживание использования бота
-- ✅ **Rate limiting** - защита от спама
+---
 
-## 📋 Требования
+## Возможности
 
-- Python 3.10+
-- Telegram Bot Token (от [@BotFather](https://t.me/BotFather))
+| Фича | Описание |
+|------|----------|
+| **Inline-режим** | Работает в любом чате — просто начни писать `@username` + ссылка |
+| **Без водяных знаков** | Чистое видео с максимальным качеством через `yt-dlp` |
+| **YouTube Shorts** | Поддержка ссылок на шорты с проверкой длительности (до 60 сек) |
+| **Настройки чата** | `/settings` — настрой поведение бота под свой чат |
+| **Только чистые ссылки** | Опционально: игнорировать сообщения вида «смотри <ссылка>» |
+| **Удаление сообщений** | Опционально: удалять исходное сообщение после скачивания |
+| **Rate limiting** | Защита от спама — макс. 10 запросов в минуту на пользователя |
+| **Автоочистка** | Временные файлы удаляются автоматически каждые 10–15 минут |
+| **Статистика** | Личная статистика скачиваний (`/stats`) и общий топ (`/top`) |
+| **Кэш-канал** | Опционально: кэшировать видео в канале, чтобы не перекачивать |
+| **Docker** | Готовый `Dockerfile` и `compose.yml` для деплоя |
+| **Systemd** | Юнит-файл для автозапуска на Linux VPS |
 
-## 🚀 Быстрый старт
+## Быстрый старт
 
-### 1. Установка зависимостей
+### Требования
+
+- **Python 3.10+**
+- **Токен Telegram-бота** — получи у [@BotFather](https://t.me/BotFather)
+- (Опционально) **Кэш-канал** — приватный канал для хранения кэша
+
+### 1. Клонирование и настройка
 
 ```bash
-# Клонировать репозиторий или скачать файлы
+git clone <your-repo-url>
 cd tiktok-bot
+cp .env.example .env
+# Открой .env в редакторе и вставь BOT_TOKEN
+```
 
-# Создать виртуальное окружение (рекомендуется)
-python -m venv venv
+### 2. Локальный запуск
 
-# Активировать виртуальное окружение
-# Windows:
-venv\Scripts\activate
-# Linux/Mac:
-source venv/bin/activate
+```bash
+# Создать виртуальное окружение
+python -m venv .venv
+
+# Активировать
+source .venv/bin/activate        # Linux / macOS
+.venv\Scripts\activate          # Windows
 
 # Установить зависимости
 pip install -r requirements.txt
-```
 
-### 2. Настройка бота
-
-#### Создать бота в Telegram
-
-1. Написать [@BotFather](https://t.me/BotFather)
-2. Отправить `/newbot`
-3. Выбрать имя и username для бота
-4. Получить токен (примерно так: `1234567890:ABCdefGHIjklMNOpqrsTUVwxyz`)
-
-#### Включить inline режим
-
-1. Написать [@BotFather](https://t.me/BotFather)
-2. Отправить `/setinline`
-3. Выбрать вашего бота
-4. Ввести placeholder текст: `Вставьте ссылку на TikTok видео`
-
-#### Установить команды (опционально)
-
-1. Написать [@BotFather](https://t.me/BotFather)
-2. Отправить `/setcommands`
-3. Выбрать вашего бота
-4. Вставить:
-```
-start - Начать работу с ботом
-help - Помощь и инструкции
-stats - Моя статистика
-```
-
-### 3. Конфигурация
-
-Создать файл `.env` из шаблона:
-
-```bash
-# Windows
-copy .env.example .env
-
-# Linux/Mac
-cp .env.example .env
-```
-
-Отредактировать `.env` и вставить токен бота:
-
-```env
-BOT_TOKEN=ваш_токен_от_BotFather
-```
-
-### 4. Запуск бота
-
-```bash
 # Запустить бота
 python -m bot.main
 ```
 
-Бот запустится и будет работать. Вы увидите сообщение:
+Бот запустится в режиме polling. В консоли увидишь:
 ```
-[2024-03-21 15:30:45] INFO - Bot started: @yourbot (ID: 123456789)
+[INFO] Bot started: @your_bot_username (ID: 123456789)
 ```
 
-## 💻 Использование
-
-### В любом чате
-
-1. Начните писать `@yourbot` (имя вашего бота)
-2. После пробела вставьте ссылку на TikTok видео
-3. Выберите результат из всплывающего меню
-4. Видео будет отправлено в личные сообщения
-
-### Поддерживаемые форматы ссылок
-
-- `https://www.tiktok.com/@username/video/123456789`
-- `https://vm.tiktok.com/XXXXXX` (короткие ссылки)
-- `https://vt.tiktok.com/XXXXXX`
-- `https://m.tiktok.com/v/123456789`
-
-### Команды бота
-
-- `/start` - Приветствие и инструкция
-- `/help` - Подробная справка
-- `/stats` - Ваша статистика использования
-
-## 🛠️ Деплой на VPS (Linux)
-
-### Установка на Ubuntu/Debian
+### 3. Docker (рекомендуется для сервера)
 
 ```bash
-# Обновить систему
-sudo apt update && sudo apt upgrade -y
-
-# Установить Python 3.10+
-sudo apt install python3 python3-pip python3-venv git -y
-
-# Клонировать/загрузить проект
-cd /opt
-sudo git clone <your-repo-url> tiktok-bot
-cd tiktok-bot
-
-# Создать виртуальное окружение
-python3 -m venv venv
-source venv/bin/activate
-
-# Установить зависимости
-pip install -r requirements.txt
-
-# Настроить .env
 cp .env.example .env
-nano .env  # Вставить токен бота
+# Отредактируй .env
+docker compose up -d --build
+
+# Смотреть логи
+docker compose logs -f tiktok-bot
 ```
 
-### Создать systemd service
+Бот работает в фоне, перезапускается автоматически при падении.
+
+### 4. Systemd (Linux VPS)
 
 ```bash
-sudo nano /etc/systemd/system/tiktok-bot.service
-```
+# Скопировать юнит-файл
+sudo cp tiktok-bot.service /etc/systemd/system/
 
-Вставить:
-
-```ini
-[Unit]
-Description=TikTok Downloader Telegram Bot
-After=network.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/opt/tiktok-bot
-ExecStart=/opt/tiktok-bot/venv/bin/python -m bot.main
-Restart=always
-RestartSec=10
-
-[Install]
-WantedBy=multi-user.target
-```
-
-### Запустить сервис
-
-```bash
 # Перезагрузить systemd
 sudo systemctl daemon-reload
 
 # Включить автозапуск
-sudo systemctl enable tiktok-bot
+sudo systemctl enable --now tiktok-bot
 
-# Запустить бота
-sudo systemctl start tiktok-bot
-
-# Проверить статус
-sudo systemctl status tiktok-bot
-
-# Просмотреть логи
+# Смотреть логи
 sudo journalctl -u tiktok-bot -f
 ```
 
-### Управление сервисом
+## Конфигурация
 
-```bash
-# Остановить
-sudo systemctl stop tiktok-bot
+Все настройки задаются через переменные окружения в файле `.env`:
 
-# Перезапустить
-sudo systemctl restart tiktok-bot
+| Переменная | Описание | По умолчанию |
+|------------|----------|--------------|
+| `BOT_TOKEN` | Токен Telegram-бота (обязательно) | — |
+| `ADMIN_ID` | ID администратора для расширенных возможностей | `0` |
+| `ALLOWED_CHAT_IDS` | Белый список ID чатов/каналов через запятую | *(пусто = все)* |
+| `AUTO_ALLOW_MEMBER_CHATS` | `true` — работать везде; `false` — только из ALLOWED_CHAT_IDS | `true` |
+| `CACHE_CHANNEL_ID` | ID канала для кэширования медиа (опционально) | `0` |
+| `MAX_FILE_SIZE_MB` | Максимальный размер файла для отправки | `50` |
+| `FILE_CLEANUP_INTERVAL` | Время жизни временных файлов в минутах | `10` |
+| `DATABASE_PATH` | Путь к базе данных SQLite | `data/bot.db` |
+| `DOWNLOADS_PATH` | Папка для временных файлов | `downloads` |
 
-# Посмотреть статус
-sudo systemctl status tiktok-bot
+### Режим работы: везде или только в определённых чатах
+
+По умолчанию `AUTO_ALLOW_MEMBER_CHATS=true` — бот отвечает в любом чате, где он является участником.
+
+Если установить `false`, бот будет работать **только** в чатах, ID которых указаны в `ALLOWED_CHAT_IDS`:
+
+```env
+AUTO_ALLOW_MEMBER_CHATS=false
+ALLOWED_CHAT_IDS=-1001234567890,-1009876543210
 ```
 
-## 📊 Структура проекта
+## Команды бота
+
+| Команда | Описание | Кто может |
+|---------|----------|-----------|
+| `/start` | Приветствие, инструкция и меню | Все |
+| `/help` | Подробная справка по использованию | Все |
+| `/stats` | Персональная статистика скачиваний | Все |
+| `/top` | Топ пользователей по скачиваниям | Все |
+| `/settings` | Настройки поведения бота в чате | Только админы |
+
+## Настройки чата
+
+Команда `/settings` доступна **только администраторам** чата/канала. В личных сообщениях доступна всегда.
+
+### «Только чистые ссылки»
+
+- **Включено** — бот отвечает только если сообщение состоит исключительно из ссылки.
+  - ✅ `https://www.tiktok.com/@user/video/123` → бот отвечает
+  - ❌ `Смотри что нашел: https://www.tiktok.com/@user/video/123` → игнорируется
+- **Выключено** — бот парсит любое сообщение, содержащее ссылку.
+
+### «Удалять сообщения со ссылками»
+
+- **Включено** — после отправки видео исходное сообщение пользователя удаляется.
+- **Выключено** — исходное сообщение остаётся в чате.
+
+## Как это работает
+
+### Способ 1: Inline-режим (в любом чате)
+
+Не нужно добавлять бота в группу. Просто:
+
+1. Открой любой чат
+2. Напиши `@your_bot_username https://www.tiktok.com/@user/video/123`
+3. Нажми на результат — видео отправится в чат!
+
+### Способ 2: Прямое сообщение боту
+
+1. Найди бота в Telegram
+2. Отправь ему ссылку
+3. Получи видео сразу в ответ
+
+### Поддерживаемые ссылки
+
+- TikTok: `tiktok.com/@user/video/123`, `vm.tiktok.com/xxx`, `vt.tiktok.com/xxx`
+- YouTube Shorts: `youtube.com/shorts/xxxxx`, `youtu.be/xxxxx`
+
+## Структура проекта
 
 ```
 tiktok-bot/
 ├── bot/
-│   ├── __init__.py
-│   ├── main.py              # Точка входа
-│   ├── config.py            # Конфигурация
+│   ├── main.py              # Точка входа: инициализация и polling
+│   ├── config.py            # Загрузка переменных из .env
 │   ├── handlers/
-│   │   ├── commands.py      # Обработчики команд
-│   │   └── inline.py        # Inline handlers
+│   │   ├── commands.py      # /start, /help, /stats, /settings, обработка URL
+│   │   └── inline.py        # Inline-запросы и отправка результата
 │   ├── services/
-│   │   ├── downloader.py    # Скачивание видео
-│   │   ├── file_manager.py  # Управление файлами
-│   │   └── url_parser.py    # Парсинг ссылок
+│   │   ├── downloader.py    # Скачивание через yt-dlp
+│   │   ├── file_manager.py  # Автоочистка временных файлов
+│   │   └── url_parser.py    # Валидация и нормализация ссылок
 │   ├── database/
-│   │   ├── models.py        # Модели БД
-│   │   └── db.py            # CRUD операции
+│   │   ├── models.py        # SQLAlchemy-модели и схема
+│   │   ├── db.py            # Асинхронные CRUD-операции
+│   │   └── migrations.py    # Alembic-хелперы
 │   └── utils/
-│       ├── validators.py    # Валидация
-│       └── formatters.py    # Форматирование сообщений
-├── downloads/               # Временные файлы
-├── data/                    # База данных
-├── .env                     # Конфигурация (не в git)
+│       ├── validators.py    # Валидация входных данных
+│       └── formatters.py    # Форматирование сообщений, размеров, времени
+├── alembic/                 # Миграции базы данных
+│   └── versions/
+│       ├── 20260427_0001_initial_schema.py
+│       └── 20260512_0002_add_chat_settings.py
+├── data/                    # SQLite-база (игнорируется git)
+├── downloads/               # Временные медиа (игнорируются git)
+├── requirements.txt         # Python-зависимости
+├── Dockerfile               # Образ Docker
+├── compose.yml              # Docker Compose конфиг
+├── tiktok-bot.service       # Systemd unit
 ├── .env.example             # Шаблон конфигурации
-├── requirements.txt         # Зависимости Python
-└── README.md                # Документация
+├── README.md                # Этот файл
+├── LICENSE                  # MIT License
+├── CONTRIBUTING.md          # Руководство по вкладу
+├── CODE_OF_CONDUCT.md       # Кодекс поведения
+├── SECURITY.md              # Политика безопасности
+└── CHANGELOG.md             # История изменений
 ```
 
-## ⚙️ Конфигурация
+## Безопасность
 
-Все настройки в файле `.env`:
+- **Токен бота** хранится только в `.env`, никогда не попадает в код или git
+- **Валидация URL** — проверяется, что ссылка принадлежит TikTok или YouTube
+- **Rate limiting** — защита от злоупотреблений и спама
+- **Path traversal** — пути файлов нормализуются, запрещён выход за пределы директорий
+- **Белый список чатов** — можно ограничить доступ к боту
 
-| Параметр | Описание | По умолчанию |
-|----------|----------|--------------|
-| `BOT_TOKEN` | Токен Telegram бота | *обязательно* |
-| `ADMIN_ID` | ID админа (опционально) | 0 |
-| `MAX_FILE_SIZE_MB` | Макс. размер файла (МБ) | 50 |
-| `FILE_CLEANUP_INTERVAL` | Время жизни файлов (мин) | 10 |
-| `DATABASE_PATH` | Путь к БД | data/bot.db |
-| `DOWNLOADS_PATH` | Папка для скачивания | downloads |
+Подробнее читай в [SECURITY.md](SECURITY.md).
 
-## 🔍 Логирование
+## Разработка
 
-Логи сохраняются в:
-- Консоль (stdout)
-- Файл `bot.log`
+Хочешь улучшить бота? Круто! Читай [CONTRIBUTING.md](CONTRIBUTING.md).
 
-Формат логов:
-```
-[2024-03-21 15:30:45] INFO - bot.main - Bot started: @yourbot
-[2024-03-21 15:31:12] INFO - bot.handlers.inline - User 123456 requested download
-[2024-03-21 15:31:18] INFO - bot.services.downloader - Download successful: video.mp4
-```
-
-## ❓ Частые вопросы
-
-**Q: Бот не отвечает на inline запросы?**  
-A: Убедитесь, что вы включили inline режим в @BotFather командой `/setinline`
-
-**Q: Видео слишком большое?**  
-A: Telegram ограничивает размер файлов до 50 МБ для ботов (2 ГБ для Premium)
-
-**Q: Как обновить бота?**  
-A: 
+Кратко:
 ```bash
-cd /opt/tiktok-bot
-git pull
-sudo systemctl restart tiktok-bot
+# Форк → клон → ветка
+git checkout -b feature/my-improvement
+# Код → тест → коммит → push → Pull Request
 ```
 
-**Q: Где посмотреть ошибки?**  
-A: `sudo journalctl -u tiktok-bot -f` или файл `bot.log`
+## Лицензия
 
-## 🐛 Устранение проблем
+Проект распространяется под лицензией [MIT](LICENSE).
 
-### Бот не запускается
+## Контакты и вклад
 
-1. Проверьте токен в `.env`
-2. Проверьте установку зависимостей: `pip install -r requirements.txt`
-3. Проверьте логи: `cat bot.log`
-
-### Ошибка "Module not found"
-
-```bash
-# Переустановить зависимости
-pip install --upgrade -r requirements.txt
-```
-
-### База данных заблокирована
-
-```bash
-# Остановить бота
-sudo systemctl stop tiktok-bot
-
-# Удалить lock файл
-rm data/bot.db-journal
-
-# Запустить снова
-sudo systemctl start tiktok-bot
-```
-
-## 📝 Лицензия
-
-MIT License - свободное использование
-
-## 🤝 Вклад
-
-Проект открыт для улучшений! Pull requests приветствуются.
-
-## 📧 Контакты
-
-По вопросам и предложениям - создайте Issue в репозитории.
+- Нашёл баг? Создай [issue](../../issues)
+- Хочешь предложить идею? Создай [discussion](../../discussions) или [issue](../../issues)
+- Pull requests приветствуются! Читай [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ---
 
-**Сделано с ❤️ для удобства скачивания TikTok видео**
-## Docker Deploy
-
-This bot uses Telegram long polling, so it does not expose any HTTP port and can run alongside other Docker containers without port conflicts.
-
-### 1. Prepare `.env`
-
-```bash
-cp .env.example .env
-```
-
-Set at least:
-
-```env
-BOT_TOKEN=your_bot_token
-CACHE_CHANNEL_ID=-1001234567890
-```
-
-### 2. Build and start
-
-```bash
-docker compose up -d --build
-```
-
-### 3. Check logs
-
-```bash
-docker compose logs -f tiktok-bot
-```
-
-### 4. Restart after updates
-
-```bash
-docker compose up -d --build
-```
-
-### 5. Stop
-
-```bash
-docker compose down
-```
-
-### Persistent data
-
-- `./data` stores SQLite database
-- `./downloads` stores temporary media between download/send/cleanup
-
-### Notes for VPS
-
-- No ports are published by default
-- `restart: unless-stopped` is already enabled
-- Safe to run next to other containers behind the same Docker engine
+<div align="center">
+  <sub>Сделано с ❤️ для удобного скачивания видео</sub>
+</div>
