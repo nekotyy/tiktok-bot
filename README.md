@@ -1,6 +1,6 @@
 <div align="center">
   <h1>TikTok Downloader Bot</h1>
-  <p><strong>Telegram-бот для скачивания видео из TikTok и YouTube Shorts без водяных знаков</strong></p>
+  <p><strong>Telegram-бот для скачивания видео из TikTok, YouTube Shorts и Instagram Reels без водяных знаков</strong></p>
 
   <p>
     <a href="#"><img src="https://img.shields.io/badge/python-3.10%2B-blue.svg?style=flat-square&amp;logo=python&amp;logoColor=white" alt="Python 3.10+"></a>
@@ -28,6 +28,8 @@
 | **Inline-режим** | Работает в любом чате — просто начни писать `@username` + ссылка |
 | **Без водяных знаков** | Чистое видео с максимальным качеством через `yt-dlp` |
 | **YouTube Shorts** | Поддержка ссылок на шорты с проверкой длительности (до 60 сек) |
+| **Instagram Reels** | Скачивание рилсов из Instagram |
+| **TikTok фото + звук** | Фото-посты TikTok отправляются вместе с аудиофайлом, если дорожка доступна |
 | **Настройки чата** | `/settings` — настрой поведение бота под свой чат |
 | **Только чистые ссылки** | Опционально: игнорировать сообщения вида «смотри <ссылка>» |
 | **Удаление сообщений** | Опционально: удалять исходное сообщение после скачивания |
@@ -179,6 +181,7 @@ ALLOWED_CHAT_IDS=-1001234567890,-1009876543210
 
 - TikTok: `tiktok.com/@user/video/123`, `vm.tiktok.com/xxx`, `vt.tiktok.com/xxx`
 - YouTube Shorts: `youtube.com/shorts/xxxxx`, `youtu.be/xxxxx`
+- Instagram Reels: `instagram.com/reel/xxxxx`, `instagram.com/reels/xxxxx`
 
 ## Структура проекта
 
@@ -223,7 +226,7 @@ tiktok-bot/
 ## Безопасность
 
 - **Токен бота** хранится только в `.env`, никогда не попадает в код или git
-- **Валидация URL** — проверяется, что ссылка принадлежит TikTok или YouTube
+- **Валидация URL** — проверяется, что ссылка принадлежит TikTok, YouTube Shorts или Instagram Reels
 - **Rate limiting** — защита от злоупотреблений и спама
 - **Path traversal** — пути файлов нормализуются, запрещён выход за пределы директорий
 - **Белый список чатов** — можно ограничить доступ к боту

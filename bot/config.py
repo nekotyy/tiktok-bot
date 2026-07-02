@@ -11,6 +11,17 @@ env_path = Path(__file__).parent.parent / '.env'
 load_dotenv(dotenv_path=env_path)
 
 
+def _get_int_env(name: str, default: int = 0) -> int:
+    """Read an integer env var without crashing on placeholders."""
+    raw_value = os.getenv(name)
+    if raw_value is None or raw_value.strip() == '':
+        return default
+    try:
+        return int(raw_value)
+    except ValueError:
+        return default
+
+
 class Config:
     """Bot configuration from environment variables."""
     
@@ -18,10 +29,10 @@ class Config:
     BOT_TOKEN: str = os.getenv('BOT_TOKEN', '')
     
     # Admin user ID
-    ADMIN_ID: int = int(os.getenv('ADMIN_ID', '0'))
+    ADMIN_ID: int = _get_int_env('ADMIN_ID', 0)
     
     # Cache channel ID for inline mode (optional)
-    CACHE_CHANNEL_ID: int = int(os.getenv('CACHE_CHANNEL_ID', '0')) if os.getenv('CACHE_CHANNEL_ID') else 0
+    CACHE_CHANNEL_ID: int = _get_int_env('CACHE_CHANNEL_ID', 0)
 
     # Chat/channel whitelist. Empty means "allow everywhere".
     ALLOWED_CHAT_IDS: Set[int] = set()
@@ -33,14 +44,14 @@ class Config:
     )
     
     # File settings
-    MAX_FILE_SIZE_MB: int = int(os.getenv('MAX_FILE_SIZE_MB', '50'))
+    MAX_FILE_SIZE_MB: int = _get_int_env('MAX_FILE_SIZE_MB', 50)
     MAX_FILE_SIZE_BYTES: int = MAX_FILE_SIZE_MB * 1024 * 1024
 
     # YouTube Shorts max duration (seconds) — reject regular videos
     YOUTUBE_SHORTS_MAX_DURATION: int = 61
     
     # Cleanup settings
-    FILE_CLEANUP_INTERVAL: int = int(os.getenv('FILE_CLEANUP_INTERVAL', '10'))
+    FILE_CLEANUP_INTERVAL: int = _get_int_env('FILE_CLEANUP_INTERVAL', 10)
     
     # Paths
     BASE_DIR: Path = Path(__file__).parent.parent

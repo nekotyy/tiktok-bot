@@ -1,4 +1,4 @@
-"""Inline query handlers for TikTok and YouTube Shorts."""
+"""Inline query handlers for supported short-video links."""
 
 import logging
 import time
@@ -45,6 +45,8 @@ async def _send_media_to_private_chat(
     """Send downloaded media to user's private chat and clean up files."""
     if download_result.get("media_type") == "photo":
         file_paths = download_result.get("file_paths", [])
+        audio_path = download_result.get("audio_path")
+        delete_paths = file_paths + ([audio_path] if audio_path else [])
         try:
             if len(file_paths) == 1:
                 await bot.send_photo(
@@ -61,8 +63,15 @@ async def _send_media_to_private_chat(
                             for fp in chunk
                         ],
                     )
+            if audio_path:
+                await _send_audio_to_private_chat(
+                    bot=bot,
+                    user_id=user_id,
+                    audio_path=audio_path,
+                    title=download_result.get("audio_title"),
+                )
         finally:
-            await file_manager.delete_files(file_paths)
+            await file_manager.delete_files(delete_paths)
         return
 
     file_path = download_result["file_path"]
@@ -74,6 +83,20 @@ async def _send_media_to_private_chat(
         )
     finally:
         await file_manager.delete_file(file_path)
+
+
+async def _send_audio_to_private_chat(
+    bot: Bot,
+    user_id: int,
+    audio_path: str,
+    title: str | None,
+) -> None:
+    audio_file = FSInputFile(audio_path)
+    try:
+        await bot.send_audio(chat_id=user_id, audio=audio_file, title=title)
+    except Exception as e:
+        logger.warning("Could not send audio as audio, sending document: %s", e)
+        await bot.send_document(chat_id=user_id, document=audio_file)
 
 
 def _get_cache_chat_id(user_id: int) -> int:
@@ -135,7 +158,13 @@ def _check_rate_limit(user_id: int) -> bool:
 
 
 def _platform_label(platform: Platform) -> str:
-    return "TikTok" if platform == Platform.TIKTOK else "YouTube Short"
+    if platform == Platform.TIKTOK:
+        return "TikTok"
+    if platform == Platform.YOUTUBE_SHORTS:
+        return "YouTube Short"
+    if platform == Platform.INSTAGRAM_REELS:
+        return "Instagram Reel"
+    return platform.value
 
 
 @inline_router.inline_query()
@@ -165,7 +194,7 @@ async def handle_inline_query(
             results=[],
             cache_time=1,
             is_personal=True,
-            switch_pm_text="📝 Вставьте ссылку на TikTok или YouTube Shorts",
+            switch_pm_text="📝 Вставьте ссылку на TikTok, YouTube Shorts или Instagram Reels",
             switch_pm_parameter="start",
         )
         return
@@ -176,7 +205,7 @@ async def handle_inline_query(
             results=[],
             cache_time=1,
             is_personal=True,
-            switch_pm_text="❌ Поддерживаются TikTok и YouTube Shorts",
+            switch_pm_text="❌ Поддерживаются TikTok, YouTube Shorts и Instagram Reels",
             switch_pm_parameter="invalid_url",
         )
         return
@@ -222,6 +251,8 @@ async def handle_inline_query(
         # ── Photo post (TikTok only) ──
         if download_result.get("media_type") == "photo":
             file_paths = download_result.get("file_paths", [])
+            audio_path = download_result.get("audio_path")
+            delete_paths = file_paths + ([audio_path] if audio_path else [])
             try:
                 results = await _build_inline_photo_results(
                     bot=bot,
@@ -234,7 +265,7 @@ async def handle_inline_query(
                     cache_time=300,
                     is_personal=True,
                 )
-                await file_manager.delete_files(file_paths)
+                await file_manager.delete_files(delete_paths)
                 await db.log_download(
                     user_id=user_id,
                     video_url=parsed.normalized_url,
@@ -245,7 +276,7 @@ async def handle_inline_query(
                 logger.info(f"Inline photo results sent for user {user_id}")
             except Exception as e:
                 logger.error(f"Failed to upload photos for inline: {e}")
-                await file_manager.delete_files(file_paths)
+                await file_manager.delete_files(delete_paths)
                 raise
             return
 

@@ -65,6 +65,10 @@ class _ChatActionSender:
     def upload_video(**kwargs):
         return _AsyncNoopContext()
 
+    @staticmethod
+    def upload_document(**kwargs):
+        return _AsyncNoopContext()
+
 
 class _FSInputFile:
     def __init__(self, path):
@@ -108,6 +112,8 @@ def _install_stub_modules():
 
     aiogram_types_module = types.ModuleType("aiogram.types")
     aiogram_types_module.CallbackQuery = object
+    aiogram_types_module.ChatMemberAdministrator = object
+    aiogram_types_module.ChatMemberOwner = object
     aiogram_types_module.FSInputFile = _FSInputFile
     aiogram_types_module.InlineKeyboardButton = _InlineKeyboardButton
     aiogram_types_module.InlineKeyboardMarkup = _InlineKeyboardMarkup
@@ -157,7 +163,8 @@ def _install_stub_modules():
 
     class Platform(Enum):
         TIKTOK = "tiktok"
-        YOUTUBE = "youtube"
+        YOUTUBE_SHORTS = "youtube_shorts"
+        INSTAGRAM_REELS = "instagram_reels"
 
     class URLParser:
         @staticmethod
@@ -179,7 +186,8 @@ def _install_stub_modules():
 _install_stub_modules()
 
 commands = importlib.import_module("bot.handlers.commands")
-Config = importlib.import_module("bot.config").Config
+config_module = importlib.import_module("bot.config")
+Config = config_module.Config
 
 
 @dataclass
@@ -221,6 +229,7 @@ class DummyMessage:
         self.answer_calls = []
         self.reply_video_calls = []
         self.reply_photo_calls = []
+        self.reply_audio_calls = []
         self.reply_document_calls = []
         self.reply_media_group_calls = []
 
@@ -243,6 +252,9 @@ class DummyMessage:
     async def reply_photo(self, photo):
         self.reply_photo_calls.append({"photo": photo})
 
+    async def reply_audio(self, audio, title=None):
+        self.reply_audio_calls.append({"audio": audio, "title": title})
+
     async def reply_document(self, document):
         self.reply_document_calls.append({"document": document})
 
@@ -256,13 +268,27 @@ class DummyMessage:
 class ConfigTests(unittest.TestCase):
     def setUp(self):
         self.original_allowed_chat_ids = Config.ALLOWED_CHAT_IDS
+        self.original_auto_allow_member_chats = Config.AUTO_ALLOW_MEMBER_CHATS
+        Config.AUTO_ALLOW_MEMBER_CHATS = False
 
     def tearDown(self):
         Config.ALLOWED_CHAT_IDS = self.original_allowed_chat_ids
+        Config.AUTO_ALLOW_MEMBER_CHATS = self.original_auto_allow_member_chats
 
     def test_parse_id_list_supports_multiple_separators(self):
         parsed = Config._parse_id_list("123, -100200300\n-100400500; 999")
         self.assertEqual(parsed, {123, -100200300, -100400500, 999})
+
+    def test_get_int_env_falls_back_on_placeholder(self):
+        original = os.environ.get("TEST_INT_ENV")
+        os.environ["TEST_INT_ENV"] = "your_telegram_id"
+        try:
+            self.assertEqual(config_module._get_int_env("TEST_INT_ENV", 7), 7)
+        finally:
+            if original is None:
+                os.environ.pop("TEST_INT_ENV", None)
+            else:
+                os.environ["TEST_INT_ENV"] = original
 
     def test_is_chat_allowed_respects_whitelist(self):
         Config.ALLOWED_CHAT_IDS = {-1001, 42}
@@ -277,8 +303,10 @@ class ConfigTests(unittest.TestCase):
 class CommandHandlerTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.original_allowed_chat_ids = Config.ALLOWED_CHAT_IDS
+        self.original_auto_allow_member_chats = Config.AUTO_ALLOW_MEMBER_CHATS
         self.original_extract_and_validate = commands.URLParser.extract_and_validate
         Config.ALLOWED_CHAT_IDS = {-1001234567890}
+        Config.AUTO_ALLOW_MEMBER_CHATS = False
         commands.URLParser.extract_and_validate = MagicMock(
             return_value=SimpleNamespace(
                 platform=commands.Platform.TIKTOK,
@@ -287,11 +315,16 @@ class CommandHandlerTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.db = AsyncMock()
+        self.db.get_chat_settings.return_value = {
+            "delete_source_messages": True,
+            "require_pure_link": False,
+        }
         self.downloader = AsyncMock()
         self.file_manager = AsyncMock()
 
     async def asyncTearDown(self):
         Config.ALLOWED_CHAT_IDS = self.original_allowed_chat_ids
+        Config.AUTO_ALLOW_MEMBER_CHATS = self.original_auto_allow_member_chats
         commands.URLParser.extract_and_validate = self.original_extract_and_validate
 
     async def test_channel_post_is_processed_and_sent_back_to_channel(self):
@@ -349,6 +382,74 @@ class CommandHandlerTests(unittest.IsolatedAsyncioTestCase):
             success=True,
             file_size=123456,
             duration=17,
+        )
+
+    async def test_instagram_reel_is_processed(self):
+        commands.URLParser.extract_and_validate = MagicMock(
+            return_value=SimpleNamespace(
+                platform=commands.Platform.INSTAGRAM_REELS,
+                normalized_url="https://www.instagram.com/reel/ABC123/",
+            )
+        )
+        message = DummyMessage(
+            chat=DummyChat(id=-1001234567890, type="private"),
+            text="https://www.instagram.com/reel/ABC123/?igsh=test",
+            from_user=DummyUser(id=42, username="viewer", first_name="Viewer"),
+        )
+        self.downloader.download_media.return_value = {
+            "success": True,
+            "media_type": "video",
+            "file_path": "downloads/reel.mp4",
+            "file_size": 98765,
+            "duration": 11,
+        }
+
+        await commands.handle_media_url(
+            message,
+            self.db,
+            self.downloader,
+            self.file_manager,
+        )
+
+        self.downloader.download_media.assert_awaited_once_with(
+            platform="instagram_reels",
+            url="https://www.instagram.com/reel/ABC123/",
+        )
+        self.assertEqual(len(message.reply_video_calls), 1)
+        self.file_manager.delete_file.assert_awaited_once_with("downloads/reel.mp4")
+
+    async def test_tiktok_photo_post_audio_is_sent_and_cleaned_up(self):
+        message = DummyMessage(
+            chat=DummyChat(id=-1001234567890, type="private"),
+            text="https://www.tiktok.com/@author/photo/1234567890",
+            from_user=DummyUser(id=42, username="viewer", first_name="Viewer"),
+        )
+        self.downloader.download_media.return_value = {
+            "success": True,
+            "media_type": "photo",
+            "file_paths": ["downloads/photo1.jpg"],
+            "audio_path": "downloads/photo_audio.mp3",
+            "audio_title": "TikTok sound",
+            "file_size": 123456,
+            "duration": 17,
+        }
+
+        await commands.handle_media_url(
+            message,
+            self.db,
+            self.downloader,
+            self.file_manager,
+        )
+
+        self.assertEqual(len(message.reply_photo_calls), 1)
+        self.assertEqual(len(message.reply_audio_calls), 1)
+        self.assertEqual(
+            message.reply_audio_calls[0]["audio"].path,
+            "downloads/photo_audio.mp3",
+        )
+        self.assertEqual(message.reply_audio_calls[0]["title"], "TikTok sound")
+        self.file_manager.delete_files.assert_awaited_once_with(
+            ["downloads/photo1.jpg", "downloads/photo_audio.mp3"]
         )
 
     async def test_non_whitelisted_chat_is_ignored(self):
@@ -425,5 +526,12 @@ class CommandHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(commands._message_contains_supported_url(message))
         commands.URLParser.extract_and_validate.assert_called_once_with(
             "Twitch:mafanyaking https://vt.tiktok.com/ZS9k6HCQT/"
+        )
+
+    def test_pure_link_message_accepts_instagram_reel(self):
+        self.assertTrue(
+            commands._is_pure_link_message(
+                " https://www.instagram.com/reel/ABC123/?igsh=test "
+            )
         )
 

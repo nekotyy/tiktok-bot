@@ -1,4 +1,4 @@
-"""Command handlers and direct URL handler for TikTok and YouTube Shorts."""
+"""Command handlers and direct URL handler for supported short-video links."""
 
 import logging
 from pathlib import Path
@@ -116,7 +116,8 @@ def _is_pure_link_message(text: str) -> bool:
     cleaned = re.sub(
         r'https?://(?:www\.|m\.|vm\.|vt\.)?tiktok\.com/[^\s]+'
         r'|https?://(?:www\.)?youtube\.com/shorts/[^\s]+'
-        r'|https?://youtu\.be/[^\s]+',
+        r'|https?://youtu\.be/[^\s]+'
+        r'|https?://(?:www\.)?instagram\.com/(?:reel|reels|share/reel)/[^\s]+',
         '',
         text,
     )
@@ -282,7 +283,7 @@ async def callback_rate_limit(callback: CallbackQuery):
 @command_router.callback_query(F.data == "invalid_url")
 async def callback_invalid_url(callback: CallbackQuery):
     await callback.answer(
-        text="❌ Некорректная ссылка. Поддерживаются TikTok и YouTube Shorts.",
+        text="❌ Некорректная ссылка. Поддерживаются TikTok, YouTube Shorts и Instagram Reels.",
         show_alert=True,
     )
 
@@ -317,7 +318,7 @@ async def callback_toggle_delete_source(callback: CallbackQuery, db: Database):
     await callback.answer()
 
 
-# ── Direct URL handler (TikTok + YouTube Shorts) ────────────────────
+# ── Direct URL handler ──────────────────────────────────────────────
 
 def _is_photo_file(file_path: str) -> bool:
     return Path(file_path).suffix.lower() in {".jpg", ".jpeg", ".png"}
@@ -356,6 +357,15 @@ async def _send_photo_reply(message: Message, file_paths: list[str]):
             await message.reply_document(document=media_file)
 
 
+async def _send_audio_reply(message: Message, audio_path: str, title: Optional[str]):
+    audio_file = FSInputFile(audio_path)
+    try:
+        await message.reply_audio(audio=audio_file, title=title)
+    except Exception as e:
+        logger.warning("Could not send audio as audio, sending document: %s", e)
+        await message.reply_document(document=audio_file)
+
+
 async def _delete_source_message(message: Message):
     try:
         await message.delete()
@@ -373,14 +383,26 @@ async def _delete_source_message(message: Message):
         )
 
 
-# Match both TikTok and YouTube Shorts URLs
+# Match supported media URLs
 URL_PATTERN = (
     r'https?://(?:www\.|m\.|vm\.|vt\.)?tiktok\.com/[^\s]+'
     r'|'
     r'https?://(?:www\.)?youtube\.com/shorts/[^\s]+'
     r'|'
     r'https?://youtu\.be/[^\s]+'
+    r'|'
+    r'https?://(?:www\.)?instagram\.com/(?:reel|reels|share/reel)/[^\s]+'
 )
+
+
+def _platform_label(platform: Platform) -> str:
+    if platform == Platform.TIKTOK:
+        return "TikTok"
+    if platform == Platform.YOUTUBE_SHORTS:
+        return "YouTube Short"
+    if platform == Platform.INSTAGRAM_REELS:
+        return "Instagram Reel"
+    return platform.value
 
 
 @command_router.message(_message_contains_supported_url)
@@ -391,7 +413,7 @@ async def handle_media_url(
     downloader: MediaDownloader,
     file_manager: FileManager,
 ):
-    """Handle TikTok and YouTube Shorts URLs sent directly to the bot."""
+    """Handle supported media URLs sent directly to the bot."""
     if not await _ensure_chat_allowed(message):
         return
 
@@ -401,7 +423,7 @@ async def handle_media_url(
     parsed = URLParser.extract_and_validate(text)
     if not parsed:
         await message.reply(
-            "❌ Некорректная ссылка. Поддерживаются TikTok и YouTube Shorts."
+            "❌ Некорректная ссылка. Поддерживаются TikTok, YouTube Shorts и Instagram Reels."
         )
         return
 
@@ -421,7 +443,7 @@ async def handle_media_url(
         last_name=last_name,
     )
 
-    platform_label = "TikTok" if parsed.platform == Platform.TIKTOK else "YouTube Short"
+    platform_label = _platform_label(parsed.platform)
     logger.info(
         "Requester %s in chat %s requested %s: %s",
         user_id,
@@ -457,13 +479,28 @@ async def handle_media_url(
 
         if download_result.get("media_type") == "photo":
             file_paths = download_result.get("file_paths", [])
-            async with ChatActionSender.upload_photo(
-                bot=message.bot,
-                chat_id=message.chat.id,
-                message_thread_id=message.message_thread_id,
-            ):
-                await _send_photo_reply(message, file_paths)
-            await file_manager.delete_files(file_paths)
+            audio_path = download_result.get("audio_path")
+            delete_paths = file_paths + ([audio_path] if audio_path else [])
+            try:
+                async with ChatActionSender.upload_photo(
+                    bot=message.bot,
+                    chat_id=message.chat.id,
+                    message_thread_id=message.message_thread_id,
+                ):
+                    await _send_photo_reply(message, file_paths)
+                if audio_path:
+                    async with ChatActionSender.upload_document(
+                        bot=message.bot,
+                        chat_id=message.chat.id,
+                        message_thread_id=message.message_thread_id,
+                    ):
+                        await _send_audio_reply(
+                            message,
+                            audio_path,
+                            download_result.get("audio_title"),
+                        )
+            finally:
+                await file_manager.delete_files(delete_paths)
         else:
             file_path = download_result["file_path"]
             video_file = FSInputFile(file_path)

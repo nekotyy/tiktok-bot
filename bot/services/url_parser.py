@@ -1,4 +1,4 @@
-"""URL parsing and validation for TikTok and YouTube Shorts links."""
+"""URL parsing and validation for TikTok, YouTube Shorts, and Instagram Reels."""
 
 import re
 from enum import Enum
@@ -10,6 +10,7 @@ class Platform(Enum):
     """Supported platforms."""
     TIKTOK = "tiktok"
     YOUTUBE_SHORTS = "youtube_shorts"
+    INSTAGRAM_REELS = "instagram_reels"
 
 
 class ParsedURL:
@@ -25,7 +26,7 @@ class ParsedURL:
 
 
 class URLParser:
-    """Parser for TikTok and YouTube Shorts URLs."""
+    """Parser for TikTok, YouTube Shorts, and Instagram Reels URLs."""
 
     # TikTok URL patterns
     TIKTOK_PATTERN = r'https?://(?:www\.|m\.|vm\.|vt\.)?tiktok\.com/[^\s]+'
@@ -33,6 +34,11 @@ class URLParser:
     # YouTube Shorts patterns
     YOUTUBE_SHORTS_PATTERN = r'https?://(?:www\.)?youtube\.com/shorts/[^\s]+'
     YOUTUBE_SHORT_URL_PATTERN = r'https?://youtu\.be/[^\s]+'
+
+    # Instagram Reels patterns
+    INSTAGRAM_REELS_PATTERN = (
+        r'https?://(?:www\.)?instagram\.com/(?:reel|reels|share/reel)/[^\s]+'
+    )
 
     # Supported TikTok domains
     TIKTOK_DOMAINS = [
@@ -48,6 +54,12 @@ class URLParser:
         'youtube.com',
         'www.youtube.com',
         'youtu.be',
+    ]
+
+    # Supported Instagram domains
+    INSTAGRAM_DOMAINS = [
+        'instagram.com',
+        'www.instagram.com',
     ]
 
     @classmethod
@@ -71,11 +83,14 @@ class URLParser:
         if '/shorts/' in url_lower or 'youtu.be' in url_lower:
             return Platform.YOUTUBE_SHORTS
 
+        if 'instagram.com' in url_lower:
+            return Platform.INSTAGRAM_REELS
+
         return None
 
     @classmethod
     def extract_url(cls, text: str) -> Optional[str]:
-        """Extract the first TikTok or YouTube Shorts URL from text.
+        """Extract the first supported media URL from text.
 
         Args:
             text: Text that may contain a URL
@@ -87,7 +102,8 @@ class URLParser:
             return None
 
         combined_pattern = (
-            f'({cls.YOUTUBE_SHORTS_PATTERN}|'
+            f'({cls.INSTAGRAM_REELS_PATTERN}|'
+            f'{cls.YOUTUBE_SHORTS_PATTERN}|'
             f'{cls.YOUTUBE_SHORT_URL_PATTERN}|'
             f'{cls.TIKTOK_PATTERN})'
         )
@@ -151,6 +167,32 @@ class URLParser:
             return False
 
     @classmethod
+    def is_valid_instagram_reels_url(cls, url: str) -> bool:
+        """Check if URL is a valid Instagram Reels URL."""
+        if not url:
+            return False
+
+        try:
+            parsed = urlparse(url)
+            if parsed.scheme not in ('http', 'https'):
+                return False
+
+            domain = parsed.netloc.lower()
+            if not any(domain == d or domain.endswith('.' + d) for d in cls.INSTAGRAM_DOMAINS):
+                return False
+
+            path = parsed.path.lower().strip('/')
+            if path.startswith('reel/') or path.startswith('reels/'):
+                return len(path.split('/')) >= 2 and bool(path.split('/')[1])
+
+            if path.startswith('share/reel/'):
+                return len(path.split('/')) >= 3 and bool(path.split('/')[2])
+
+            return False
+        except Exception:
+            return False
+
+    @classmethod
     def normalize_url(cls, url: str) -> str:
         """Normalize URL by stripping unnecessary query parameters."""
         if not url:
@@ -173,6 +215,13 @@ class URLParser:
                 if len(parts) >= 2:
                     video_id = parts[1].split('/')[0].split('?')[0]
                     return f"https://www.youtube.com/shorts/{video_id}"
+
+            # Instagram Reels: keep only the canonical path, drop tracking params
+            if 'instagram.com' in parsed.netloc.lower():
+                path = parsed.path
+                if path and not path.endswith('/'):
+                    path = f"{path}/"
+                return f"https://www.instagram.com{path}"
 
             return url
         except Exception:
@@ -201,6 +250,9 @@ class URLParser:
                 return None
         elif platform == Platform.YOUTUBE_SHORTS:
             if not cls.is_valid_youtube_shorts_url(url):
+                return None
+        elif platform == Platform.INSTAGRAM_REELS:
+            if not cls.is_valid_instagram_reels_url(url):
                 return None
 
         normalized = cls.normalize_url(url)
