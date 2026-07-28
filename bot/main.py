@@ -56,7 +56,9 @@ async def main():
         # Initialize services
         downloader = MediaDownloader(
             downloads_path=Config.DOWNLOADS_PATH,
-            max_file_size_bytes=Config.MAX_FILE_SIZE_BYTES
+            max_file_size_bytes=Config.MAX_FILE_SIZE_BYTES,
+            proxy=Config.YTDLP_PROXY,
+            impersonate=Config.YTDLP_IMPERSONATE,
         )
         logger.info("Downloader service initialized")
         

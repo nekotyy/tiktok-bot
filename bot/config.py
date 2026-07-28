@@ -47,9 +47,6 @@ class Config:
     MAX_FILE_SIZE_MB: int = _get_int_env('MAX_FILE_SIZE_MB', 50)
     MAX_FILE_SIZE_BYTES: int = MAX_FILE_SIZE_MB * 1024 * 1024
 
-    # YouTube Shorts max duration (seconds) — reject regular videos
-    YOUTUBE_SHORTS_MAX_DURATION: int = 61
-    
     # Cleanup settings
     FILE_CLEANUP_INTERVAL: int = _get_int_env('FILE_CLEANUP_INTERVAL', 10)
     
@@ -57,6 +54,10 @@ class Config:
     BASE_DIR: Path = Path(__file__).parent.parent
     DATABASE_PATH: str = str(BASE_DIR / os.getenv('DATABASE_PATH', 'data/bot.db'))
     DOWNLOADS_PATH: str = str(BASE_DIR / os.getenv('DOWNLOADS_PATH', 'downloads'))
+
+    # Optional network settings for yt-dlp, gallery-dl, and Instagram embed.
+    YTDLP_PROXY: str = os.getenv('YTDLP_PROXY', '').strip()
+    YTDLP_IMPERSONATE: str = os.getenv('YTDLP_IMPERSONATE', '').strip()
     
     # Rate limiting
     RATE_LIMIT_REQUESTS: int = 10  # requests per minute

@@ -1,6 +1,6 @@
 <div align="center">
   <h1>TikTok Downloader Bot</h1>
-  <p><strong>Telegram-бот для скачивания видео из TikTok, YouTube Shorts и Instagram Reels без водяных знаков</strong></p>
+  <p><strong>Telegram-бот для скачивания видео, фото и каруселей из социальных сетей</strong></p>
 
   <p>
     <a href="#"><img src="https://img.shields.io/badge/python-3.10%2B-blue.svg?style=flat-square&amp;logo=python&amp;logoColor=white" alt="Python 3.10+"></a>
@@ -26,10 +26,11 @@
 | Фича | Описание |
 |------|----------|
 | **Inline-режим** | Работает в любом чате — просто начни писать `@username` + ссылка |
-| **Без водяных знаков** | Чистое видео с максимальным качеством через `yt-dlp` |
-| **YouTube Shorts** | Поддержка ссылок на шорты с проверкой длительности (до 60 сек) |
-| **Instagram Reels** | Скачивание рилсов из Instagram |
-| **TikTok фото + звук** | Фото-посты TikTok отправляются вместе с аудиофайлом, если дорожка доступна |
+| **Видео со звуком** | Раздельные video/audio-потоки объединяются, результат проверяется через `ffprobe` |
+| **YouTube** | Поддержка обычных видео, Shorts и коротких ссылок |
+| **Instagram** | Reels, видео, фото-посты и смешанные карусели |
+| **VK и другие площадки** | VK Видео/Клипы, X, Facebook, Reddit, Rutube, OK, Twitch, Vimeo и другие |
+| **Фото без аудиофайла** | Фото-посты отправляются только как фото/альбом, без отдельной фоновой дорожки |
 | **Настройки чата** | `/settings` — настрой поведение бота под свой чат |
 | **Только чистые ссылки** | Опционально: игнорировать сообщения вида «смотри <ссылка>» |
 | **Удаление сообщений** | Опционально: удалять исходное сообщение после скачивания |
@@ -38,13 +39,14 @@
 | **Статистика** | Личная статистика скачиваний (`/stats`) и общий топ (`/top`) |
 | **Кэш-канал** | Опционально: кэшировать видео в канале, чтобы не перекачивать |
 | **Docker** | Готовый `Dockerfile` и `compose.yml` для деплоя |
-| **Systemd** | Юнит-файл для автозапуска на Linux VPS |
 
 ## Быстрый старт
 
 ### Требования
 
 - **Python 3.10+**
+- **FFmpeg и ffprobe** — объединение и проверка видео/аудио
+- **Node.js или Deno** — полноценная поддержка YouTube в актуальном `yt-dlp`
 - **Токен Telegram-бота** — получи у [@BotFather](https://t.me/BotFather)
 - (Опционально) **Кэш-канал** — приватный канал для хранения кэша
 
@@ -92,22 +94,6 @@ docker compose logs -f tiktok-bot
 
 Бот работает в фоне, перезапускается автоматически при падении.
 
-### 4. Systemd (Linux VPS)
-
-```bash
-# Скопировать юнит-файл
-sudo cp tiktok-bot.service /etc/systemd/system/
-
-# Перезагрузить systemd
-sudo systemctl daemon-reload
-
-# Включить автозапуск
-sudo systemctl enable --now tiktok-bot
-
-# Смотреть логи
-sudo journalctl -u tiktok-bot -f
-```
-
 ## Конфигурация
 
 Все настройки задаются через переменные окружения в файле `.env`:
@@ -123,6 +109,11 @@ sudo journalctl -u tiktok-bot -f
 | `FILE_CLEANUP_INTERVAL` | Время жизни временных файлов в минутах | `10` |
 | `DATABASE_PATH` | Путь к базе данных SQLite | `data/bot.db` |
 | `DOWNLOADS_PATH` | Папка для временных файлов | `downloads` |
+| `YTDLP_PROXY` | HTTP/SOCKS-прокси для обоих загрузчиков | *(пусто)* |
+| `YTDLP_IMPERSONATE` | TLS-имперсонация `curl_cffi`, например `chrome`; включать только при необходимости | *(пусто)* |
+
+Публичные Instagram-посты и Reels скачиваются анонимно через embed-страницу:
+экспортировать браузерную сессию или настраивать cookies не нужно.
 
 ### Режим работы: везде или только в определённых чатах
 
@@ -169,19 +160,21 @@ ALLOWED_CHAT_IDS=-1001234567890,-1009876543210
 
 1. Открой любой чат
 2. Напиши `@your_bot_username https://www.tiktok.com/@user/video/123`
-3. Нажми на результат — видео отправится в чат!
+3. Нажми на результат — медиа отправится в чат!
 
 ### Способ 2: Прямое сообщение боту
 
 1. Найди бота в Telegram
 2. Отправь ему ссылку
-3. Получи видео сразу в ответ
+3. Получи видео, фото или карусель сразу в ответ
 
 ### Поддерживаемые ссылки
 
 - TikTok: `tiktok.com/@user/video/123`, `vm.tiktok.com/xxx`, `vt.tiktok.com/xxx`
-- YouTube Shorts: `youtube.com/shorts/xxxxx`, `youtu.be/xxxxx`
-- Instagram Reels: `instagram.com/reel/xxxxx`, `instagram.com/reels/xxxxx`
+- YouTube: `youtube.com/watch?v=...`, `youtube.com/shorts/...`, `youtu.be/...`
+- Instagram: `instagram.com/reel/...`, `instagram.com/p/...`
+- VK: `vk.com/video...`, `vk.com/clip...`, медиапосты `vk.com/wall...`
+- Другие: X/Twitter, Facebook, Threads, Reddit, Pinterest, Rutube, OK, Twitch, Vimeo, Dailymotion, Likee, Coub и Streamable
 
 ## Структура проекта
 
@@ -213,12 +206,10 @@ tiktok-bot/
 ├── requirements.txt         # Python-зависимости
 ├── Dockerfile               # Образ Docker
 ├── compose.yml              # Docker Compose конфиг
-├── tiktok-bot.service       # Systemd unit
 ├── .env.example             # Шаблон конфигурации
 ├── README.md                # Этот файл
 ├── LICENSE                  # MIT License
 ├── CONTRIBUTING.md          # Руководство по вкладу
-├── CODE_OF_CONDUCT.md       # Кодекс поведения
 ├── SECURITY.md              # Политика безопасности
 └── CHANGELOG.md             # История изменений
 ```
@@ -226,7 +217,7 @@ tiktok-bot/
 ## Безопасность
 
 - **Токен бота** хранится только в `.env`, никогда не попадает в код или git
-- **Валидация URL** — проверяется, что ссылка принадлежит TikTok, YouTube Shorts или Instagram Reels
+- **Валидация URL** — принимаются только известные публичные домены из явного allow-list
 - **Rate limiting** — защита от злоупотреблений и спама
 - **Path traversal** — пути файлов нормализуются, запрещён выход за пределы директорий
 - **Белый список чатов** — можно ограничить доступ к боту

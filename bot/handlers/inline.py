@@ -2,6 +2,7 @@
 
 import logging
 import time
+from pathlib import Path
 from typing import Any, Dict
 
 from aiogram import Bot, Router, F
@@ -13,6 +14,7 @@ from aiogram.types import (
     InlineQueryResultCachedPhoto,
     InlineQueryResultCachedVideo,
     InputMediaPhoto,
+    InputMediaVideo,
     InputTextMessageContent,
 )
 
@@ -43,35 +45,40 @@ async def _send_media_to_private_chat(
     file_manager: FileManager,
 ) -> None:
     """Send downloaded media to user's private chat and clean up files."""
-    if download_result.get("media_type") == "photo":
+    if download_result.get("media_type") in {"photo", "album"}:
         file_paths = download_result.get("file_paths", [])
-        audio_path = download_result.get("audio_path")
-        delete_paths = file_paths + ([audio_path] if audio_path else [])
         try:
             if len(file_paths) == 1:
-                await bot.send_photo(
-                    chat_id=user_id,
-                    photo=FSInputFile(file_paths[0]),
-                )
+                if _is_photo_file(file_paths[0]):
+                    await bot.send_photo(
+                        chat_id=user_id,
+                        photo=FSInputFile(file_paths[0]),
+                    )
+                else:
+                    await bot.send_video(
+                        chat_id=user_id,
+                        video=FSInputFile(file_paths[0]),
+                        supports_streaming=True,
+                    )
             else:
                 for start in range(0, len(file_paths), 10):
                     chunk = file_paths[start:start + 10]
                     await bot.send_media_group(
                         chat_id=user_id,
                         media=[
-                            InputMediaPhoto(media=FSInputFile(fp))
+                            (
+                                InputMediaPhoto(media=FSInputFile(fp))
+                                if _is_photo_file(fp)
+                                else InputMediaVideo(
+                                    media=FSInputFile(fp),
+                                    supports_streaming=True,
+                                )
+                            )
                             for fp in chunk
                         ],
                     )
-            if audio_path:
-                await _send_audio_to_private_chat(
-                    bot=bot,
-                    user_id=user_id,
-                    audio_path=audio_path,
-                    title=download_result.get("audio_title"),
-                )
         finally:
-            await file_manager.delete_files(delete_paths)
+            await file_manager.delete_files(file_paths)
         return
 
     file_path = download_result["file_path"]
@@ -85,18 +92,8 @@ async def _send_media_to_private_chat(
         await file_manager.delete_file(file_path)
 
 
-async def _send_audio_to_private_chat(
-    bot: Bot,
-    user_id: int,
-    audio_path: str,
-    title: str | None,
-) -> None:
-    audio_file = FSInputFile(audio_path)
-    try:
-        await bot.send_audio(chat_id=user_id, audio=audio_file, title=title)
-    except Exception as e:
-        logger.warning("Could not send audio as audio, sending document: %s", e)
-        await bot.send_document(chat_id=user_id, document=audio_file)
+def _is_photo_file(file_path: str) -> bool:
+    return Path(file_path).suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}
 
 
 def _get_cache_chat_id(user_id: int) -> int:
@@ -109,16 +106,25 @@ async def _build_inline_photo_results(
     file_paths: list[str],
     title: str,
 ) -> list:
-    """Upload photos to cache chat and create inline cached-photo results."""
+    """Upload an album and create matching cached inline results."""
     cache_chat_id = _get_cache_chat_id(user_id)
     results = []
 
     for index, file_path in enumerate(file_paths[:10], start=1):
-        sent_message = await bot.send_photo(
-            chat_id=cache_chat_id,
-            photo=FSInputFile(file_path),
-        )
-        photo_file_id = sent_message.photo[-1].file_id
+        is_photo = _is_photo_file(file_path)
+        if is_photo:
+            sent_message = await bot.send_photo(
+                chat_id=cache_chat_id,
+                photo=FSInputFile(file_path),
+            )
+            file_id = sent_message.photo[-1].file_id
+        else:
+            sent_message = await bot.send_video(
+                chat_id=cache_chat_id,
+                video=FSInputFile(file_path),
+                supports_streaming=True,
+            )
+            file_id = sent_message.video.file_id
 
         if cache_chat_id == user_id:
             try:
@@ -126,12 +132,23 @@ async def _build_inline_photo_results(
             except Exception:
                 pass
 
+        result_type = (
+            InlineQueryResultCachedPhoto
+            if is_photo
+            else InlineQueryResultCachedVideo
+        )
+        result_kwargs = {
+            "id": f"{user_id}_media_{index}_{int(time.time())}",
+            "title": f"{'📷' if is_photo else '🎬'} {index}/{len(file_paths)}",
+            "description": title[:80] if title else f"Медиа {index}",
+        }
+        if is_photo:
+            result_kwargs["photo_file_id"] = file_id
+        else:
+            result_kwargs["video_file_id"] = file_id
         results.append(
-            InlineQueryResultCachedPhoto(
-                id=f"{user_id}_photo_{index}_{int(time.time())}",
-                photo_file_id=photo_file_id,
-                title=f"📷 {index}/{len(file_paths)}",
-                description=title[:80] if title else f"Фото {index}",
+            result_type(
+                **result_kwargs,
             )
         )
 
@@ -161,9 +178,13 @@ def _platform_label(platform: Platform) -> str:
     if platform == Platform.TIKTOK:
         return "TikTok"
     if platform == Platform.YOUTUBE_SHORTS:
-        return "YouTube Short"
+        return "YouTube"
     if platform == Platform.INSTAGRAM_REELS:
-        return "Instagram Reel"
+        return "Instagram"
+    if platform == Platform.VK:
+        return "VK"
+    if platform == Platform.OTHER:
+        return "медиа"
     return platform.value
 
 
@@ -194,7 +215,7 @@ async def handle_inline_query(
             results=[],
             cache_time=1,
             is_personal=True,
-            switch_pm_text="📝 Вставьте ссылку на TikTok, YouTube Shorts или Instagram Reels",
+            switch_pm_text="📝 Вставьте ссылку на видео или публикацию",
             switch_pm_parameter="start",
         )
         return
@@ -205,7 +226,7 @@ async def handle_inline_query(
             results=[],
             cache_time=1,
             is_personal=True,
-            switch_pm_text="❌ Поддерживаются TikTok, YouTube Shorts и Instagram Reels",
+            switch_pm_text="❌ Эта ссылка не поддерживается",
             switch_pm_parameter="invalid_url",
         )
         return
@@ -249,10 +270,8 @@ async def handle_inline_query(
         title = download_result.get("title", f"{label} Video")
 
         # ── Photo post (TikTok only) ──
-        if download_result.get("media_type") == "photo":
+        if download_result.get("media_type") in {"photo", "album"}:
             file_paths = download_result.get("file_paths", [])
-            audio_path = download_result.get("audio_path")
-            delete_paths = file_paths + ([audio_path] if audio_path else [])
             try:
                 results = await _build_inline_photo_results(
                     bot=bot,
@@ -265,7 +284,7 @@ async def handle_inline_query(
                     cache_time=300,
                     is_personal=True,
                 )
-                await file_manager.delete_files(delete_paths)
+                await file_manager.delete_files(file_paths)
                 await db.log_download(
                     user_id=user_id,
                     video_url=parsed.normalized_url,
@@ -276,7 +295,7 @@ async def handle_inline_query(
                 logger.info(f"Inline photo results sent for user {user_id}")
             except Exception as e:
                 logger.error(f"Failed to upload photos for inline: {e}")
-                await file_manager.delete_files(delete_paths)
+                await file_manager.delete_files(file_paths)
                 raise
             return
 

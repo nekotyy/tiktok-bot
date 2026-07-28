@@ -13,6 +13,7 @@ from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     InputMediaPhoto,
+    InputMediaVideo,
     Message,
 )
 from aiogram.filters import Command, CommandStart
@@ -283,7 +284,7 @@ async def callback_rate_limit(callback: CallbackQuery):
 @command_router.callback_query(F.data == "invalid_url")
 async def callback_invalid_url(callback: CallbackQuery):
     await callback.answer(
-        text="❌ Некорректная ссылка. Поддерживаются TikTok, YouTube Shorts и Instagram Reels.",
+        text="❌ Некорректная или неподдерживаемая ссылка.",
         show_alert=True,
     )
 
@@ -321,7 +322,11 @@ async def callback_toggle_delete_source(callback: CallbackQuery, db: Database):
 # ── Direct URL handler ──────────────────────────────────────────────
 
 def _is_photo_file(file_path: str) -> bool:
-    return Path(file_path).suffix.lower() in {".jpg", ".jpeg", ".png"}
+    return Path(file_path).suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}
+
+
+def _is_video_file(file_path: str) -> bool:
+    return Path(file_path).suffix.lower() in {".mp4", ".mov", ".webm", ".mkv"}
 
 
 def _message_contains_supported_url(message: Message) -> bool:
@@ -335,15 +340,24 @@ async def _send_photo_reply(message: Message, file_paths: list[str]):
         media_file = FSInputFile(file_path)
         if _is_photo_file(file_path):
             await message.reply_photo(photo=media_file)
+        elif _is_video_file(file_path):
+            await message.reply_video(video=media_file, supports_streaming=True)
         else:
             await message.reply_document(document=media_file)
         return
 
-    if all(_is_photo_file(path) for path in file_paths):
+    if all(_is_photo_file(path) or _is_video_file(path) for path in file_paths):
         for start in range(0, len(file_paths), 10):
             chunk = file_paths[start:start + 10]
             media_group = [
-                InputMediaPhoto(media=FSInputFile(fp))
+                (
+                    InputMediaPhoto(media=FSInputFile(fp))
+                    if _is_photo_file(fp)
+                    else InputMediaVideo(
+                        media=FSInputFile(fp),
+                        supports_streaming=True,
+                    )
+                )
                 for fp in chunk
             ]
             await message.reply_media_group(media=media_group)
@@ -353,17 +367,10 @@ async def _send_photo_reply(message: Message, file_paths: list[str]):
         media_file = FSInputFile(file_path)
         if _is_photo_file(file_path):
             await message.reply_photo(photo=media_file)
+        elif _is_video_file(file_path):
+            await message.reply_video(video=media_file, supports_streaming=True)
         else:
             await message.reply_document(document=media_file)
-
-
-async def _send_audio_reply(message: Message, audio_path: str, title: Optional[str]):
-    audio_file = FSInputFile(audio_path)
-    try:
-        await message.reply_audio(audio=audio_file, title=title)
-    except Exception as e:
-        logger.warning("Could not send audio as audio, sending document: %s", e)
-        await message.reply_document(document=audio_file)
 
 
 async def _delete_source_message(message: Message):
@@ -383,25 +390,17 @@ async def _delete_source_message(message: Message):
         )
 
 
-# Match supported media URLs
-URL_PATTERN = (
-    r'https?://(?:www\.|m\.|vm\.|vt\.)?tiktok\.com/[^\s]+'
-    r'|'
-    r'https?://(?:www\.)?youtube\.com/shorts/[^\s]+'
-    r'|'
-    r'https?://youtu\.be/[^\s]+'
-    r'|'
-    r'https?://(?:www\.)?instagram\.com/(?:reel|reels|share/reel)/[^\s]+'
-)
-
-
 def _platform_label(platform: Platform) -> str:
     if platform == Platform.TIKTOK:
         return "TikTok"
     if platform == Platform.YOUTUBE_SHORTS:
-        return "YouTube Short"
+        return "YouTube"
     if platform == Platform.INSTAGRAM_REELS:
-        return "Instagram Reel"
+        return "Instagram"
+    if platform == Platform.VK:
+        return "VK"
+    if platform == Platform.OTHER:
+        return "медиа"
     return platform.value
 
 
@@ -423,7 +422,7 @@ async def handle_media_url(
     parsed = URLParser.extract_and_validate(text)
     if not parsed:
         await message.reply(
-            "❌ Некорректная ссылка. Поддерживаются TikTok, YouTube Shorts и Instagram Reels."
+            "❌ Некорректная или неподдерживаемая ссылка."
         )
         return
 
@@ -477,10 +476,8 @@ async def handle_media_url(
         file_size = download_result["file_size"]
         duration = download_result.get("duration")
 
-        if download_result.get("media_type") == "photo":
+        if download_result.get("media_type") in {"photo", "album"}:
             file_paths = download_result.get("file_paths", [])
-            audio_path = download_result.get("audio_path")
-            delete_paths = file_paths + ([audio_path] if audio_path else [])
             try:
                 async with ChatActionSender.upload_photo(
                     bot=message.bot,
@@ -488,19 +485,8 @@ async def handle_media_url(
                     message_thread_id=message.message_thread_id,
                 ):
                     await _send_photo_reply(message, file_paths)
-                if audio_path:
-                    async with ChatActionSender.upload_document(
-                        bot=message.bot,
-                        chat_id=message.chat.id,
-                        message_thread_id=message.message_thread_id,
-                    ):
-                        await _send_audio_reply(
-                            message,
-                            audio_path,
-                            download_result.get("audio_title"),
-                        )
             finally:
-                await file_manager.delete_files(delete_paths)
+                await file_manager.delete_files(file_paths)
         else:
             file_path = download_result["file_path"]
             video_file = FSInputFile(file_path)

@@ -91,6 +91,12 @@ class _InputMediaPhoto:
         self.media = media
 
 
+class _InputMediaVideo:
+    def __init__(self, media, supports_streaming=False):
+        self.media = media
+        self.supports_streaming = supports_streaming
+
+
 class _Command:
     def __init__(self, *args, **kwargs):
         pass
@@ -118,6 +124,7 @@ def _install_stub_modules():
     aiogram_types_module.InlineKeyboardButton = _InlineKeyboardButton
     aiogram_types_module.InlineKeyboardMarkup = _InlineKeyboardMarkup
     aiogram_types_module.InputMediaPhoto = _InputMediaPhoto
+    aiogram_types_module.InputMediaVideo = _InputMediaVideo
     aiogram_types_module.Message = object
     sys.modules["aiogram.types"] = aiogram_types_module
 
@@ -165,6 +172,8 @@ def _install_stub_modules():
         TIKTOK = "tiktok"
         YOUTUBE_SHORTS = "youtube_shorts"
         INSTAGRAM_REELS = "instagram_reels"
+        VK = "vk"
+        OTHER = "other"
 
     class URLParser:
         @staticmethod
@@ -418,7 +427,7 @@ class CommandHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(message.reply_video_calls), 1)
         self.file_manager.delete_file.assert_awaited_once_with("downloads/reel.mp4")
 
-    async def test_tiktok_photo_post_audio_is_sent_and_cleaned_up(self):
+    async def test_tiktok_photo_post_is_sent_without_audio(self):
         message = DummyMessage(
             chat=DummyChat(id=-1001234567890, type="private"),
             text="https://www.tiktok.com/@author/photo/1234567890",
@@ -428,8 +437,6 @@ class CommandHandlerTests(unittest.IsolatedAsyncioTestCase):
             "success": True,
             "media_type": "photo",
             "file_paths": ["downloads/photo1.jpg"],
-            "audio_path": "downloads/photo_audio.mp3",
-            "audio_title": "TikTok sound",
             "file_size": 123456,
             "duration": 17,
         }
@@ -442,14 +449,9 @@ class CommandHandlerTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(len(message.reply_photo_calls), 1)
-        self.assertEqual(len(message.reply_audio_calls), 1)
-        self.assertEqual(
-            message.reply_audio_calls[0]["audio"].path,
-            "downloads/photo_audio.mp3",
-        )
-        self.assertEqual(message.reply_audio_calls[0]["title"], "TikTok sound")
+        self.assertEqual(len(message.reply_audio_calls), 0)
         self.file_manager.delete_files.assert_awaited_once_with(
-            ["downloads/photo1.jpg", "downloads/photo_audio.mp3"]
+            ["downloads/photo1.jpg"]
         )
 
     async def test_non_whitelisted_chat_is_ignored(self):
@@ -497,6 +499,19 @@ class CommandHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(message.reply_media_group_calls[0]["media"]), 10)
         self.assertEqual(len(message.reply_media_group_calls[1]["media"]), 10)
         self.assertEqual(len(message.reply_media_group_calls[2]["media"]), 3)
+
+    async def test_send_mixed_instagram_album_as_photo_and_video_group(self):
+        message = DummyMessage(chat=DummyChat(id=-1001234567890))
+
+        await commands._send_photo_reply(
+            message,
+            ["downloads/photo.jpg", "downloads/video.mp4"],
+        )
+
+        media = message.reply_media_group_calls[0]["media"]
+        self.assertIsInstance(media[0], _InputMediaPhoto)
+        self.assertIsInstance(media[1], _InputMediaVideo)
+        self.assertTrue(media[1].supports_streaming)
 
     async def test_top_command_returns_leaderboard(self):
         message = DummyMessage(
