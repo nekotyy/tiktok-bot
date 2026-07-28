@@ -137,16 +137,17 @@ class MediaDownloader:
         )
         return opts
 
-    def _get_repair_audio_ydl_opts(self, media_id: str) -> Dict[str, Any]:
+    def _get_repair_audio_ydl_opts(
+        self,
+        output_prefix: str,
+        format_selector: str,
+    ) -> Dict[str, Any]:
         opts = self._get_common_ydl_opts()
         opts.update(
             {
-                "format": (
-                    "ba[ext=m4a]/ba[acodec!=none]/"
-                    "b[acodec!=none]"
-                ),
+                "format": format_selector,
                 "outtmpl": str(
-                    self.downloads_path / f"{media_id}_repair_audio.%(ext)s"
+                    self.downloads_path / f"{output_prefix}.%(ext)s"
                 ),
                 "overwrites": True,
             }
@@ -505,17 +506,15 @@ class MediaDownloader:
     ) -> str:
         audio_prefix = f"{media_id}_repair_audio"
         try:
-            with yt_dlp.YoutubeDL(
-                self._get_repair_audio_ydl_opts(media_id)
-            ) as ydl:
-                ydl.download([url])
-
-            audio_path = self._find_downloaded_file(
-                audio_prefix,
-                self.AUDIO_EXTENSIONS | self.VIDEO_EXTENSIONS,
+            audio_path = self._download_valid_audio_candidate(
+                url=url,
+                audio_prefix=audio_prefix,
             )
-            if not audio_path:
-                raise RuntimeError("отдельная аудиодорожка не была скачана")
+            audio_probe = self._probe_media(audio_path)
+            if not self._stream(audio_probe, "audio"):
+                raise RuntimeError(
+                    "скачанный файл для ремонта не содержит аудиопотока"
+                )
 
             repaired_path = str(self.downloads_path / f"{media_id}_repaired.mp4")
             self._run_ffmpeg(
@@ -551,6 +550,55 @@ class MediaDownloader:
                         candidate.unlink()
                 except OSError:
                     pass
+
+    def _download_valid_audio_candidate(
+        self,
+        url: str,
+        audio_prefix: str,
+    ) -> str:
+        # Some extractors advertise an audio codec on a URL that actually
+        # contains video only. Try a real audio-only format first, then a
+        # progressive video+audio format, validating every file with ffprobe.
+        selectors = (
+            "ba[ext=m4a][acodec!=none]/ba[acodec!=none][vcodec=none]",
+            "b[acodec!=none][vcodec!=none]",
+        )
+        errors: List[str] = []
+
+        for attempt, selector in enumerate(selectors, start=1):
+            output_prefix = f"{audio_prefix}_{attempt}"
+            try:
+                with yt_dlp.YoutubeDL(
+                    self._get_repair_audio_ydl_opts(
+                        output_prefix,
+                        selector,
+                    )
+                ) as ydl:
+                    ydl.download([url])
+
+                audio_path = self._find_downloaded_file(
+                    output_prefix,
+                    self.AUDIO_EXTENSIONS | self.VIDEO_EXTENSIONS,
+                )
+                if not audio_path:
+                    errors.append(f"попытка {attempt}: файл не создан")
+                    continue
+
+                probe = self._probe_media(audio_path)
+                if self._stream(probe, "audio"):
+                    return audio_path
+
+                errors.append(f"попытка {attempt}: аудиопоток отсутствует")
+                self._cleanup_paths([audio_path])
+            except Exception as error:
+                errors.append(f"попытка {attempt}: {error}")
+                self._cleanup_matching_files(output_prefix)
+
+        details = "; ".join(errors)
+        raise RuntimeError(
+            "не удалось получить настоящую аудиодорожку"
+            + (f" ({details})" if details else "")
+        )
 
     def _convert_for_telegram(
         self,

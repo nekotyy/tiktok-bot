@@ -142,6 +142,65 @@ class DownloaderHelperTests(unittest.TestCase):
             "media123",
         )
 
+    def test_audio_repair_skips_candidate_without_real_audio_stream(self):
+        video_only_probe = {
+            "streams": [{"codec_type": "video", "codec_name": "h264"}]
+        }
+        audio_probe = {
+            "streams": [{"codec_type": "audio", "codec_name": "aac"}]
+        }
+
+        with (
+            patch.object(self.module.yt_dlp, "YoutubeDL") as ydl_factory,
+            patch.object(
+                self.downloader,
+                "_find_downloaded_file",
+                side_effect=["wrong.mp4", "audio.m4a"],
+            ),
+            patch.object(
+                self.downloader,
+                "_probe_media",
+                side_effect=[video_only_probe, audio_probe],
+            ),
+        ):
+            result = self.downloader._download_valid_audio_candidate(
+                url="https://example.com/video",
+                audio_prefix="media123_repair_audio",
+            )
+
+        self.assertEqual(result, "audio.m4a")
+        self.assertEqual(ydl_factory.call_count, 2)
+
+    def test_audio_repair_never_maps_file_without_audio(self):
+        with (
+            patch.object(
+                self.downloader,
+                "_download_valid_audio_candidate",
+                return_value="not-audio.mp4",
+            ),
+            patch.object(
+                self.downloader,
+                "_probe_media",
+                return_value={
+                    "streams": [
+                        {"codec_type": "video", "codec_name": "h264"}
+                    ]
+                },
+            ),
+            patch.object(self.downloader, "_run_ffmpeg") as run_ffmpeg,
+        ):
+            with self.assertRaisesRegex(
+                RuntimeError,
+                "не содержит аудиопотока",
+            ):
+                self.downloader._repair_missing_audio(
+                    url="https://example.com/video",
+                    video_path="silent.mp4",
+                    media_id="media123",
+                )
+
+        run_ffmpeg.assert_not_called()
+
     def test_intentionally_silent_source_does_not_download_fake_audio(self):
         video_only_probe = {
             "streams": [
