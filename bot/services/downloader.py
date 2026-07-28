@@ -64,6 +64,8 @@ class MediaDownloader:
         "bv*[ext=mp4][vcodec^=avc]+ba[ext=m4a]/"
         "bv*[ext=mp4]+ba[acodec!=none]/"
         "bv*+ba[acodec!=none]/"
+        "b[ext=mp4][vcodec^=avc][acodec!=none]/"
+        "b[ext=mp4][vcodec^=h264][acodec!=none]/"
         "b[ext=mp4][vcodec!=none][acodec!=none]/"
         "b[vcodec!=none][acodec!=none]/"
         "bv*[ext=mp4][vcodec!=none][acodec=none]/"
@@ -561,6 +563,11 @@ class MediaDownloader:
         # progressive video+audio format, validating every file with ffprobe.
         selectors = (
             "ba[ext=m4a][acodec!=none]/ba[acodec!=none][vcodec=none]",
+            (
+                "b[ext=mp4][vcodec^=avc][acodec!=none]/"
+                "b[ext=mp4][vcodec^=h264][acodec!=none]"
+            ),
+            "b[format_id=download][acodec!=none]",
             "b[acodec!=none][vcodec!=none]",
         )
         errors: List[str] = []

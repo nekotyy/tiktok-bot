@@ -30,6 +30,18 @@ class DownloaderHelperTests(unittest.TestCase):
         self.assertIn("[acodec!=none]", media_format)
         self.assertNotIn("best[vcodec!=none]", media_format)
 
+    def test_video_selector_prefers_h264_muxed_audio_before_generic_video(self):
+        media_format = self.downloader._get_video_ydl_opts("media123")["format"]
+
+        h264_position = media_format.index(
+            "b[ext=mp4][vcodec^=h264][acodec!=none]"
+        )
+        generic_position = media_format.index(
+            "b[ext=mp4][vcodec!=none][acodec!=none]"
+        )
+
+        self.assertLess(h264_position, generic_position)
+
     def test_impersonation_string_is_converted_for_current_ytdlp_api(self):
         downloader = self.module.MediaDownloader(
             downloads_path=self.temp_dir.name,
