@@ -123,12 +123,11 @@ class MediaDownloader:
         }
         if self.proxy:
             opts["proxy"] = self.proxy
-        impersonate_target = self.impersonate or "chrome"
-        if impersonate_target:
+        if self.impersonate:
             try:
-                opts["impersonate"] = ImpersonateTarget.from_str(impersonate_target)
+                opts["impersonate"] = ImpersonateTarget.from_str(self.impersonate)
             except Exception as error:
-                logger.debug("Failed to set impersonate target %s: %s", impersonate_target, error)
+                logger.warning("Failed to set impersonate target %s: %s", self.impersonate, error)
         return opts
 
     def _get_video_ydl_opts(self, media_id: str) -> Dict[str, Any]:
