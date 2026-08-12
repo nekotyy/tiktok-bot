@@ -7,8 +7,6 @@ from pathlib import Path
 from typing import List
 import time
 
-import aiofiles
-
 logger = logging.getLogger(__name__)
 
 
@@ -41,8 +39,7 @@ class FileManager:
         """
         try:
             if os.path.exists(file_path):
-                # Run deletion in executor to not block
-                loop = asyncio.get_event_loop()
+                loop = asyncio.get_running_loop()
                 await loop.run_in_executor(None, os.remove, file_path)
                 logger.info(f"Deleted file: {file_path}")
                 return True
@@ -72,7 +69,7 @@ class FileManager:
             max_age_seconds = self.cleanup_interval_minutes * 60
             deleted_count = 0
             
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             
             # Get all files in downloads directory
             files = await loop.run_in_executor(
@@ -110,7 +107,7 @@ class FileManager:
     async def cleanup_all_files(self) -> int:
         """Delete all temporary downloaded files immediately."""
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             deleted_count = 0
             files = await loop.run_in_executor(
                 None,
@@ -138,7 +135,7 @@ class FileManager:
             Total size in bytes
         """
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             
             def _calculate_size():
                 total_size = 0
@@ -161,7 +158,7 @@ class FileManager:
             Number of files
         """
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             
             def _count_files():
                 return len([f for f in self.downloads_path.glob('*') if f.is_file()])

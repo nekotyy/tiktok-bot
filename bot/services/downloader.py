@@ -1046,23 +1046,28 @@ class MediaDownloader:
             title = data.get("title") or "TikTok Video"
             author_info = data.get("author") or {}
             author = author_info.get("nickname") or author_info.get("unique_id") or ""
-            caption = self._build_caption(title, author)
+            caption = f"{title} — {author}".strip(" —") if author else title
             duration = data.get("duration")
 
             # Slideshow / photo post check
             images = data.get("images")
             if images and isinstance(images, list):
-                photo_paths = []
+                photo_paths: List[str] = []
+                total_size = 0
                 for idx, img_url in enumerate(images, start=1):
-                    photo_path = self._download_single_image(img_url, f"{media_id}_{idx}")
+                    photo_path = self._download_photo_file(
+                        img_url, media_id, idx,
+                    )
                     if photo_path:
+                        total_size += os.path.getsize(photo_path)
                         photo_paths.append(photo_path)
                 if photo_paths:
                     return {
                         "success": True,
-                        "media_type": "photos",
+                        "media_type": "photo",
                         "platform": "tiktok",
                         "file_paths": photo_paths,
+                        "file_size": total_size,
                         "caption": caption,
                         "title": title,
                         "photo_count": len(photo_paths),
@@ -1099,7 +1104,7 @@ class MediaDownloader:
                     "caption": caption,
                     "duration": duration,
                     "title": title,
-                    "filesize": filesize,
+                    "file_size": filesize,
                 }
         except Exception as err:
             logger.warning("TikWM fallback error for %s: %s", url, err)

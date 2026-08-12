@@ -1,0 +1,23 @@
+[project]
+name = "tiktok-bot"
+version = "1.0.0"
+description = "Telegram bot for downloading videos and photos from social media"
+requires-python = ">=3.12"
+dependencies = [
+    "aiogram>=3.15.0",
+    "yt-dlp[default]>=2026.6.9",
+    "curl-cffi>=0.15.0",
+    "gallery-dl>=1.31.10",
+    "python-dotenv>=1.0.1",
+    "aiosqlite>=0.19.0",
+    "alembic>=1.14.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
+
+[tool.uv]
+managed = true

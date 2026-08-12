@@ -26,6 +26,9 @@ wheels/
 .installed.cfg
 *.egg
 
+# uv
+.python-version
+
 # IDE
 .vscode/
 .idea/

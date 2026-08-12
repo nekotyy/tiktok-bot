@@ -2,6 +2,7 @@
 .gitignore
 .venv
 venv
+.python-version
 __pycache__
 *.pyc
 *.pyo
@@ -11,5 +12,6 @@ __pycache__
 data
 downloads
 bot.log
+tests
 .idea
 .vscode
