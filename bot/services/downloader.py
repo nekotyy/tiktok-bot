@@ -123,8 +123,12 @@ class MediaDownloader:
         }
         if self.proxy:
             opts["proxy"] = self.proxy
-        if self.impersonate:
-            opts["impersonate"] = ImpersonateTarget.from_str(self.impersonate)
+        impersonate_target = self.impersonate or "chrome"
+        if impersonate_target:
+            try:
+                opts["impersonate"] = ImpersonateTarget.from_str(impersonate_target)
+            except Exception as error:
+                logger.debug("Failed to set impersonate target %s: %s", impersonate_target, error)
         return opts
 
     def _get_video_ydl_opts(self, media_id: str) -> Dict[str, Any]:
@@ -214,11 +218,13 @@ class MediaDownloader:
         try:
             info = self._extract_info(ytdlp_url) or {}
             if self._has_video_formats(info):
-                return self._download_video_sync(
+                result = self._download_video_sync(
                     ytdlp_url,
                     media_id,
                     title_fallback="TikTok Video",
                 )
+                if result.get("success"):
+                    return result
         except yt_dlp.utils.DownloadError as error:
             extraction_error = error
 
@@ -236,6 +242,21 @@ class MediaDownloader:
                 media_id,
                 title_fallback="TikTok Photo Post",
             )
+
+        if any(item["kind"] == "video" for item in gallery_media.get("items", [])):
+            fallback = self._download_gallery_album_sync(
+                gallery_media,
+                media_id,
+                title_fallback="TikTok Video",
+            )
+            if fallback.get("success"):
+                fallback["platform"] = "tiktok"
+                return fallback
+
+        # Fallback to TikWM public API (unwatermarked HD TikTok video/slideshow)
+        tikwm_result = self._download_tiktok_via_tikwm(resolved_url, media_id)
+        if tikwm_result and tikwm_result.get("success"):
+            return tikwm_result
 
         if extraction_error:
             return self._format_download_error(extraction_error)
@@ -1000,6 +1021,90 @@ class MediaDownloader:
 
     def _collect_photo_urls_with_gallery_dl(self, url: str) -> List[str]:
         return self._collect_tiktok_media_with_gallery_dl(url)["photo_urls"]
+
+    def _download_tiktok_via_tikwm(self, url: str, media_id: str) -> Optional[Dict[str, Any]]:
+        """Fallback to TikWM public API for TikTok videos and photo posts."""
+        try:
+            from urllib.parse import quote
+            api_url = f"https://tikwm.com/api/?url={quote(url, safe='')}"
+            headers = {
+                "User-Agent": (
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/136.0.0.0 Safari/537.36"
+                ),
+                "Accept": "application/json",
+            }
+            request = Request(api_url, headers=headers)
+            with urlopen(request, timeout=15) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+
+            if payload.get("code") != 0 or not payload.get("data"):
+                logger.warning("TikWM API returned no data for %s: %s", url, payload.get("msg"))
+                return None
+
+            data = payload["data"]
+            title = data.get("title") or "TikTok Video"
+            author_info = data.get("author") or {}
+            author = author_info.get("nickname") or author_info.get("unique_id") or ""
+            caption = self._build_caption(title, author)
+            duration = data.get("duration")
+
+            # Slideshow / photo post check
+            images = data.get("images")
+            if images and isinstance(images, list):
+                photo_paths = []
+                for idx, img_url in enumerate(images, start=1):
+                    photo_path = self._download_single_image(img_url, f"{media_id}_{idx}")
+                    if photo_path:
+                        photo_paths.append(photo_path)
+                if photo_paths:
+                    return {
+                        "success": True,
+                        "media_type": "photos",
+                        "platform": "tiktok",
+                        "file_paths": photo_paths,
+                        "caption": caption,
+                        "title": title,
+                        "photo_count": len(photo_paths),
+                    }
+
+            # Video download
+            video_url = data.get("play") or data.get("wmplay")
+            if not video_url:
+                return None
+
+            if not video_url.startswith("http"):
+                video_url = f"https://tikwm.com{video_url}"
+
+            video_req = Request(video_url, headers=headers)
+            out_file = self.downloads_path / f"{media_id}.mp4"
+
+            with urlopen(video_req, timeout=30) as resp, open(out_file, "wb") as f:
+                shutil.copyfileobj(resp, f)
+
+            if out_file.exists() and out_file.stat().st_size > 0:
+                filesize = out_file.stat().st_size
+                if filesize > self.max_file_size_bytes:
+                    out_file.unlink(missing_ok=True)
+                    max_mb = self.max_file_size_bytes // (1024 * 1024)
+                    return {
+                        "success": False,
+                        "error": f"Размер файла ({filesize // (1024 * 1024)}MB) превышает лимит {max_mb}MB",
+                    }
+                return {
+                    "success": True,
+                    "media_type": "video",
+                    "platform": "tiktok",
+                    "file_path": str(out_file),
+                    "caption": caption,
+                    "duration": duration,
+                    "title": title,
+                    "filesize": filesize,
+                }
+        except Exception as err:
+            logger.warning("TikWM fallback error for %s: %s", url, err)
+        return None
 
     # ── Extraction and file helpers ────────────────────────────────
 
