@@ -192,10 +192,36 @@ def _install_stub_modules():
     sys.modules["bot.utils.formatters"] = formatters_module
 
 
-_install_stub_modules()
+_stubbed_module_names = (
+    "dotenv",
+    "aiogram",
+    "aiogram.types",
+    "aiogram.filters",
+    "aiogram.utils",
+    "aiogram.utils.chat_action",
+    "bot.database.db",
+    "bot.services.downloader",
+    "bot.services.file_manager",
+    "bot.services.url_parser",
+    "bot.utils.formatters",
+)
+_missing_module = object()
+_original_modules = {
+    name: sys.modules.get(name, _missing_module)
+    for name in _stubbed_module_names
+}
 
-commands = importlib.import_module("bot.handlers.commands")
-config_module = importlib.import_module("bot.config")
+try:
+    _install_stub_modules()
+    commands = importlib.import_module("bot.handlers.commands")
+    config_module = importlib.import_module("bot.config")
+finally:
+    for name, original_module in _original_modules.items():
+        if original_module is _missing_module:
+            sys.modules.pop(name, None)
+        else:
+            sys.modules[name] = original_module
+
 Config = config_module.Config
 
 

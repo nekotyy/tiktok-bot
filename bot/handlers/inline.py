@@ -3,19 +3,14 @@
 import logging
 import time
 from pathlib import Path
-from typing import Any, Dict
+from typing import Dict
 
-from aiogram import Bot, Router, F
+from aiogram import Bot, Router
 from aiogram.types import (
-    ChosenInlineResult,
     FSInputFile,
     InlineQuery,
-    InlineQueryResultArticle,
     InlineQueryResultCachedPhoto,
     InlineQueryResultCachedVideo,
-    InputMediaPhoto,
-    InputMediaVideo,
-    InputTextMessageContent,
 )
 
 from ..config import Config
@@ -29,6 +24,9 @@ logger = logging.getLogger(__name__)
 
 inline_router = Router()
 
+# Telegram publishes cached inline results itself after the user selects one.
+# A chosen_inline_result handler must not re-download or privately resend media.
+
 # Rate limiting storage
 _user_requests: Dict[int, list] = {}
 
@@ -36,60 +34,6 @@ _user_requests: Dict[int, list] = {}
 def _is_photo_post_error(error_msg: str) -> bool:
     normalized = (error_msg or "").lower()
     return "фото-пост" in normalized or "photo-post" in normalized
-
-
-async def _send_media_to_private_chat(
-    bot: Bot,
-    user_id: int,
-    download_result: Dict[str, Any],
-    file_manager: FileManager,
-) -> None:
-    """Send downloaded media to user's private chat and clean up files."""
-    if download_result.get("media_type") in {"photo", "album"}:
-        file_paths = download_result.get("file_paths", [])
-        try:
-            if len(file_paths) == 1:
-                if _is_photo_file(file_paths[0]):
-                    await bot.send_photo(
-                        chat_id=user_id,
-                        photo=FSInputFile(file_paths[0]),
-                    )
-                else:
-                    await bot.send_video(
-                        chat_id=user_id,
-                        video=FSInputFile(file_paths[0]),
-                        supports_streaming=True,
-                    )
-            else:
-                for start in range(0, len(file_paths), 10):
-                    chunk = file_paths[start:start + 10]
-                    await bot.send_media_group(
-                        chat_id=user_id,
-                        media=[
-                            (
-                                InputMediaPhoto(media=FSInputFile(fp))
-                                if _is_photo_file(fp)
-                                else InputMediaVideo(
-                                    media=FSInputFile(fp),
-                                    supports_streaming=True,
-                                )
-                            )
-                            for fp in chunk
-                        ],
-                    )
-        finally:
-            await file_manager.delete_files(file_paths)
-        return
-
-    file_path = download_result["file_path"]
-    try:
-        await bot.send_video(
-            chat_id=user_id,
-            video=FSInputFile(file_path),
-            supports_streaming=True,
-        )
-    finally:
-        await file_manager.delete_file(file_path)
 
 
 def _is_photo_file(file_path: str) -> bool:
@@ -351,26 +295,14 @@ async def handle_inline_query(
 
         except Exception as e:
             logger.error(f"Failed to upload video for inline: {e}")
-
-            # Fallback: send video directly to private chat
-            try:
-                await bot.send_video(
-                    chat_id=user_id,
-                    video=FSInputFile(file_path),
-                    supports_streaming=True,
-                )
-                logger.info(f"Video sent to user {user_id} (fallback)")
-            except Exception as e2:
-                logger.error(f"Failed to send video to private chat: {e2}")
-
             await file_manager.delete_file(file_path)
             await db.log_download(
                 user_id=user_id,
                 video_url=parsed.normalized_url,
-                success=True,
-                file_size=file_size,
-                duration=duration,
+                success=False,
+                error_message=str(e),
             )
+            raise
 
     except Exception as e:
         logger.error(f"Error processing inline query: {e}")
@@ -384,78 +316,3 @@ async def handle_inline_query(
             )
         except Exception:
             pass
-
-
-@inline_router.chosen_inline_result()
-async def handle_chosen_inline_result(
-    chosen_result: ChosenInlineResult,
-    downloader: MediaDownloader,
-    file_manager: FileManager,
-    db: Database,
-    bot: Bot,
-):
-    """Handle when user selects an inline result — re-download and send to private chat."""
-    user_id = chosen_result.from_user.id
-    query = chosen_result.query
-
-    logger.info(f"User {user_id} chose inline result: {query}")
-
-    parsed = URLParser.extract_and_validate(query)
-    if not parsed:
-        return
-
-    try:
-        download_result = await downloader.download_media(
-            platform=parsed.platform.value,
-            url=parsed.normalized_url,
-        )
-
-        if not download_result["success"]:
-            error_msg = download_result.get("error", "Не удалось скачать медиа")
-            try:
-                await bot.send_message(
-                    chat_id=user_id,
-                    text=f"❌ Ошибка при скачивании:\n{error_msg}\n\n🔗 {parsed.normalized_url}",
-                )
-            except Exception:
-                pass
-
-            await db.log_download(
-                user_id=user_id,
-                video_url=parsed.normalized_url,
-                success=False,
-                error_message=error_msg,
-            )
-            return
-
-        file_size = download_result["file_size"]
-        duration = download_result.get("duration")
-
-        try:
-            await _send_media_to_private_chat(
-                bot=bot,
-                user_id=user_id,
-                download_result=download_result,
-                file_manager=file_manager,
-            )
-            logger.info(f"Media sent to user {user_id} via chosen inline")
-        except Exception as e:
-            logger.error(f"Failed to send media to user {user_id}: {e}")
-            try:
-                await bot.send_message(
-                    chat_id=user_id,
-                    text="❌ Не удалось отправить видео. Возможно, оно слишком большое.",
-                )
-            except Exception:
-                pass
-
-        await db.log_download(
-            user_id=user_id,
-            video_url=parsed.normalized_url,
-            success=True,
-            file_size=file_size,
-            duration=duration,
-        )
-
-    except Exception as e:
-        logger.error(f"Error in chosen inline result: {e}")
