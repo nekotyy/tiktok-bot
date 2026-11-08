@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use teloxide::prelude::*;
 use teloxide::types::{
-    ChatAction, ChatMemberStatus, InputFile, InputMedia, InputMediaPhoto, InputMediaVideo,
+    ChatAction, ChatMemberStatus, FileId, InputFile, InputMedia, InputMediaPhoto, InputMediaVideo,
     Message, ReplyParameters,
 };
 use tracing::{error, info};
@@ -230,6 +230,55 @@ pub async fn handle_media_url_message(
         msg.chat.id, user_id, platform_label, parsed.normalized_url
     );
 
+    if let Some(cached) = db.get_cached_file(&parsed.normalized_url).await {
+        if cached.media_type == "video" {
+            let _ = bot.send_chat_action(msg.chat.id, ChatAction::UploadVideo).await;
+            let send_res = bot
+                .send_video(msg.chat.id, InputFile::file_id(FileId(cached.file_id)))
+                .supports_streaming(true)
+                .reply_parameters(ReplyParameters::new(msg.id))
+                .await;
+            if send_res.is_ok() {
+                db.log_download(
+                    user_id,
+                    parsed.normalized_url.clone(),
+                    true,
+                    cached.file_size.map(|s| s as i64),
+                    cached.duration.map(|d| d as i64),
+                    None,
+                )
+                .await;
+
+                if chat_settings.delete_source_messages {
+                    let _ = bot.delete_message(msg.chat.id, msg.id).await;
+                }
+                return Ok(());
+            }
+        } else if cached.media_type == "photo" {
+            let _ = bot.send_chat_action(msg.chat.id, ChatAction::UploadPhoto).await;
+            let send_res = bot
+                .send_photo(msg.chat.id, InputFile::file_id(FileId(cached.file_id)))
+                .reply_parameters(ReplyParameters::new(msg.id))
+                .await;
+            if send_res.is_ok() {
+                db.log_download(
+                    user_id,
+                    parsed.normalized_url.clone(),
+                    true,
+                    cached.file_size.map(|s| s as i64),
+                    None,
+                    None,
+                )
+                .await;
+
+                if chat_settings.delete_source_messages {
+                    let _ = bot.delete_message(msg.chat.id, msg.id).await;
+                }
+                return Ok(());
+            }
+        }
+    }
+
     let _ = bot.send_chat_action(msg.chat.id, ChatAction::UploadVideo).await;
 
     let download_res = downloader
@@ -259,6 +308,7 @@ pub async fn handle_media_url_message(
 
     let file_size = media.file_size();
     let duration = media.duration();
+    let title = media.title().to_string();
 
     match media {
         DownloadedMedia::Video { file_path, .. } => {
@@ -273,13 +323,28 @@ pub async fn handle_media_url_message(
 
             file_manager.delete_file(&file_path).await;
 
-            if let Err(e) = send_res {
-                error!("Failed to send video: {e}");
-                let _ = bot
-                    .send_message(msg.chat.id, "❌ Не удалось отправить видео")
-                    .reply_parameters(ReplyParameters::new(msg.id))
-                    .await;
-                return Ok(());
+            match send_res {
+                Ok(sent_msg) => {
+                    if let Some(v) = sent_msg.video() {
+                        db.save_cached_file(
+                            &parsed.normalized_url,
+                            &v.file.id.0,
+                            "video",
+                            Some(&title),
+                            Some(file_size),
+                            duration,
+                        )
+                        .await;
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to send video: {e}");
+                    let _ = bot
+                        .send_message(msg.chat.id, "❌ Не удалось отправить видео")
+                        .reply_parameters(ReplyParameters::new(msg.id))
+                        .await;
+                    return Ok(());
+                }
             }
         }
         DownloadedMedia::Photos { ref file_paths, .. } => {
@@ -287,10 +352,23 @@ pub async fn handle_media_url_message(
 
             if file_paths.len() == 1 {
                 let input_file = InputFile::file(&file_paths[0]);
-                let _ = bot
+                let send_res = bot
                     .send_photo(msg.chat.id, input_file)
                     .reply_parameters(ReplyParameters::new(msg.id))
                     .await;
+                if let Ok(ref sent_msg) = send_res {
+                    if let Some(photo) = sent_msg.photo().and_then(|p| p.last()) {
+                        db.save_cached_file(
+                            &parsed.normalized_url,
+                            &photo.file.id.0,
+                            "photo",
+                            Some(&title),
+                            Some(file_size),
+                            None,
+                        )
+                        .await;
+                    }
+                }
             } else {
                 for chunk in file_paths.chunks(10) {
                     let media_group: Vec<InputMedia> = chunk

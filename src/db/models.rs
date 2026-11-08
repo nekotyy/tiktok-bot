@@ -84,3 +84,13 @@ impl Default for ChatSettings {
         }
     }
 }
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CachedFile {
+    pub url: String,
+    pub file_id: String,
+    pub media_type: String,
+    pub title: Option<String>,
+    pub file_size: Option<u64>,
+    pub duration: Option<u64>,
+}

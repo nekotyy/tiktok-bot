@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use rusqlite::{params, Connection};
 use tracing::{error, info};
 
-use crate::db::models::{ChatSettings, GlobalStats, TopUser, UserStats};
+use crate::db::models::{CachedFile, ChatSettings, GlobalStats, TopUser, UserStats};
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS users (
@@ -41,10 +41,21 @@ CREATE TABLE IF NOT EXISTS chat_settings (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS file_cache (
+    url TEXT PRIMARY KEY,
+    file_id TEXT NOT NULL,
+    media_type TEXT NOT NULL DEFAULT 'video',
+    title TEXT,
+    file_size INTEGER,
+    duration INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_downloads_user_id ON downloads(user_id);
 CREATE INDEX IF NOT EXISTS idx_downloads_created_at ON downloads(created_at);
 CREATE INDEX IF NOT EXISTS idx_statistics_user_id ON statistics(user_id);
 CREATE INDEX IF NOT EXISTS idx_chat_settings_chat_id ON chat_settings(chat_id);
+CREATE INDEX IF NOT EXISTS idx_file_cache_url ON file_cache(url);
 "#;
 
 #[derive(Clone)]
@@ -380,5 +391,70 @@ impl Database {
         })
         .await
         .unwrap_or(false)
+    }
+
+    pub async fn get_cached_file(&self, url: &str) -> Option<CachedFile> {
+        let conn = Arc::clone(&self.conn);
+        let u = url.to_string();
+        tokio::task::spawn_blocking(move || {
+            let conn = conn.lock().unwrap();
+            let mut stmt = conn
+                .prepare(
+                    "SELECT url, file_id, media_type, title, file_size, duration FROM file_cache WHERE url = ?1 LIMIT 1",
+                )
+                .ok()?;
+            stmt.query_row(params![u], |row| {
+                let file_size: Option<i64> = row.get(4)?;
+                let duration: Option<i64> = row.get(5)?;
+                Ok(CachedFile {
+                    url: row.get(0)?,
+                    file_id: row.get(1)?,
+                    media_type: row.get(2)?,
+                    title: row.get(3)?,
+                    file_size: file_size.map(|s| s as u64),
+                    duration: duration.map(|d| d as u64),
+                })
+            })
+            .ok()
+        })
+        .await
+        .unwrap_or(None)
+    }
+
+    pub async fn save_cached_file(
+        &self,
+        url: &str,
+        file_id: &str,
+        media_type: &str,
+        title: Option<&str>,
+        file_size: Option<u64>,
+        duration: Option<u64>,
+    ) {
+        let conn = Arc::clone(&self.conn);
+        let u = url.to_string();
+        let fid = file_id.to_string();
+        let mt = media_type.to_string();
+        let t = title.map(|s| s.to_string());
+        let fs = file_size.map(|s| s as i64);
+        let dur = duration.map(|d| d as i64);
+
+        let _ = tokio::task::spawn_blocking(move || {
+            let conn = conn.lock().unwrap();
+            let _ = conn.execute(
+                r#"
+                INSERT INTO file_cache (url, file_id, media_type, title, file_size, duration)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                ON CONFLICT(url) DO UPDATE SET
+                    file_id = excluded.file_id,
+                    media_type = excluded.media_type,
+                    title = COALESCE(excluded.title, file_cache.title),
+                    file_size = COALESCE(excluded.file_size, file_cache.file_size),
+                    duration = COALESCE(excluded.duration, file_cache.duration),
+                    created_at = CURRENT_TIMESTAMP
+                "#,
+                params![u, fid, mt, t, fs, dur],
+            );
+        })
+        .await;
     }
 }
