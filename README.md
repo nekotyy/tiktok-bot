@@ -1,16 +1,18 @@
 <div align="center">
-  <h1>TikTok Downloader Bot</h1>
-  <p><strong>Telegram-бот для скачивания видео, фото и каруселей из социальных сетей</strong></p>
+  <h1>TikTok Downloader Bot (Rust Edition) 🦀⚡</h1>
+  <p><strong>Высокопроизводительный асинхронный Telegram-бот на Rust для мгновенного скачивания видео, фото и каруселей из социальных сетей</strong></p>
 
   <p>
-    <a href="#"><img src="https://img.shields.io/badge/python-3.10%2B-blue.svg?style=flat-square&amp;logo=python&amp;logoColor=white" alt="Python 3.10+"></a>
-    <a href="#"><img src="https://img.shields.io/badge/aiogram-3.x-2CA5E0.svg?style=flat-square&amp;logo=telegram&amp;logoColor=white" alt="Aiogram 3"></a>
+    <a href="#"><img src="https://img.shields.io/badge/rust-1.80%2B-orange.svg?style=flat-square&amp;logo=rust&amp;logoColor=white" alt="Rust 1.80+"></a>
+    <a href="#"><img src="https://img.shields.io/badge/teloxide-0.17-blue.svg?style=flat-square&amp;logo=telegram&amp;logoColor=white" alt="Teloxide 0.17"></a>
+    <a href="#"><img src="https://img.shields.io/badge/tokio-async-red.svg?style=flat-square&amp;logo=tokio&amp;logoColor=white" alt="Tokio"></a>
     <a href="#"><img src="https://img.shields.io/badge/docker-ready-2496ED.svg?style=flat-square&amp;logo=docker&amp;logoColor=white" alt="Docker"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg?style=flat-square" alt="License: MIT"></a>
   </p>
 
   <p>
     <a href="#возможности">Возможности</a> •
+    <a href="#архитектура-и-производительность">Производительность</a> •
     <a href="#быстрый-старт">Быстрый старт</a> •
     <a href="#конфигурация">Конфигурация</a> •
     <a href="#команды">Команды</a> •
@@ -25,30 +27,45 @@
 
 | Фича | Описание |
 |------|----------|
-| **Inline-режим** | Работает в любом чате — просто начни писать `@username` + ссылка |
-| **Видео со звуком** | Раздельные video/audio-потоки объединяются, результат проверяется через `ffprobe` |
-| **YouTube** | Поддержка обычных видео, Shorts и коротких ссылок |
-| **Instagram** | Reels, видео, фото-посты и смешанные карусели |
-| **VK и другие площадки** | VK Видео/Клипы, X, Facebook, Reddit, Rutube, OK, Twitch, Vimeo и другие |
-| **Фото без аудиофайла** | Фото-посты отправляются только как фото/альбом, без отдельной фоновой дорожки |
-| **Настройки чата** | `/settings` — настрой поведение бота под свой чат |
-| **Только чистые ссылки** | Опционально: игнорировать сообщения вида «смотри <ссылка>» |
-| **Удаление сообщений** | Опционально: удалять исходное сообщение после скачивания |
-| **Rate limiting** | Защита от спама — макс. 10 запросов в минуту на пользователя |
-| **Автоочистка** | Временные файлы удаляются автоматически каждые 10–15 минут |
-| **Статистика** | Личная статистика скачиваний (`/stats`) и общий топ (`/top`) |
-| **Кэш-канал** | Опционально: кэшировать видео в канале, чтобы не перекачивать |
-| **Docker** | Готовый `Dockerfile` и `compose.yml` для деплоя |
+| ⚡ **Максимальная скорость** | Написан на Rust с Tokio runtime: параллельные загрузки, нулевой оверхед памяти, мгновенный отклик |
+| 🚀 **Прямой TikWM API** | Для TikTok используется прямой HTTP API (видео без водяных знаков и параллельная загрузка фотоальбомов) без запуска тяжелых внешних процессов |
+| 📸 **Быстрый Instagram Embed** | Анонимный парсер `embed/captioned` через мобильные заголовки: прямое скачивание CDN без cookies и аккаунтов |
+| 🎥 **yt-dlp fallback** | YouTube (видео и Shorts), VK (клипы/видео/посты), Twitter/X, Reddit, Pinterest и др. через оптимизированный пул yt-dlp |
+| 🔍 **Inline-режим** | Работает в любом чате: напиши `@username <ссылка>` и выбери медиа для отправки |
+| 🔊 **Проверка аудио/видео** | Автоматическая проверка через `ffprobe` и ремуксинг через `ffmpeg` (faststart, h264/aac) для 100% совместимости с Telegram |
+| 🖼 **Фото и карусели** | Полноценная поддержка слайд-шоу и каруселей (отправка медиагруппами без лишних аудиофайлов) |
+| 🛡 **Rate limiting** | Встроенный thread-safe sliding window rate-limiter (10 запросов в минуту на пользователя) |
+| ⚙️ **Настройки чата** | `/settings` — режим «только чистые ссылки» и автоудаление исходных сообщений |
+| 📊 **Статистика и топ** | База SQLite (WAL-режим, connection pool) — личные данные `/stats` и глобальный топ `/top` |
+| 🧹 **Автоочистка** | Фоновый асинхронный воркер удаляет временные файлы по таймеру |
+| 🐳 **Docker ready** | Multi-stage Dockerfile на базе `rust:1-bookworm` и `python:3.12-slim` с `ffmpeg`, `yt-dlp` и `deno` |
+
+---
+
+## Архитектура и производительность
+
+В новой версии бот полностью переписан с Python на **Rust**:
+1. **Многоуровневый пайплайн скачивания (Tiered Pipeline):**
+   - **TikTok:** Сначала опрашивается высокоскоростной API TikWM. Видео и фотоальбомы скачиваются напрямую через пул соединений `reqwest` с параллельной загрузкой (`join_all`). Если API недоступен, прозрачно включается yt-dlp.
+   - **Instagram:** Сначала используется прямой парсер Instagram Embed. Если пост приватный или embed заблокирован, запрос направляется в yt-dlp.
+   - **YouTube, VK, X и др.:** Скачиваются через yt-dlp с жестким ограничением форматов под Telegram (`mp4[vcodec^=avc1][height<=1080]`), Deno JS runtime и флагами быстрого старта.
+2. **SQLite + WAL режим:**
+   - База данных работает в режиме `PRAGMA journal_mode = WAL` и `PRAGMA synchronous = NORMAL`.
+   - Полная обратная совместимость со схемой таблиц из предыдущей версии (`users`, `downloads`, `statistics`, `chat_settings`).
+3. **Безопасность памяти и надёжность:**
+   - Все ошибки сетевых вызовов, процессов `ffmpeg`/`yt-dlp` и парсинга строго типизированы и изолированы, не приводя к падению бота.
+   - Исходный Python-код заботливо сохранен в директории `.old/` для истории.
+
+---
 
 ## Быстрый старт
 
 ### Требования
-
-- **Python 3.10+**
-- **FFmpeg и ffprobe** — объединение и проверка видео/аудио
-- **Node.js или Deno** — полноценная поддержка YouTube в актуальном `yt-dlp`
-- **Токен Telegram-бота** — получи у [@BotFather](https://t.me/BotFather)
-- (Опционально) **Кэш-канал** — приватный канал для хранения кэша
+- **Rust 1.80+** (Cargo)
+- **FFmpeg и ffprobe** — для проверки и ремуксинга медиафайлов
+- **yt-dlp** — установлен в `PATH`
+- **Deno или Node.js** (рекомендуется) — для JS-интерпретатора YouTube
+- **Токен Telegram-бота** — от [@BotFather](https://t.me/BotFather)
 
 ### 1. Клонирование и настройка
 
@@ -56,197 +73,104 @@
 git clone <your-repo-url>
 cd tiktok-bot
 cp .env.example .env
-# Открой .env в редакторе и вставь BOT_TOKEN
+# Заполни BOT_TOKEN в .env
 ```
 
-### 2. Локальный запуск
+### 2. Локальный запуск на Rust
 
 ```bash
-# Создать виртуальное окружение
-python -m venv .venv
+# Проверка и сборка
+cargo build --release
 
-# Активировать
-source .venv/bin/activate        # Linux / macOS
-.venv\Scripts\activate          # Windows
-
-# Установить зависимости
-pip install -r requirements.txt
-
-# Запустить бота
-python -m bot.main
+# Запуск
+cargo run --release
 ```
 
-Бот запустится в режиме polling. В консоли увидишь:
-```
-[INFO] Bot started: @your_bot_username (ID: 123456789)
-```
-
-### 3. Docker (рекомендуется для сервера)
+### 3. Запуск через Docker Compose (рекомендуется)
 
 ```bash
-cp .env.example .env
-# Отредактируй .env
 docker compose up -d --build
 
-# Смотреть логи
+# Просмотр логов
 docker compose logs -f tiktok-bot
 ```
 
-Бот работает в фоне, перезапускается автоматически при падении.
+---
 
 ## Конфигурация
 
-Все настройки задаются через переменные окружения в файле `.env`:
+Все параметры задаются через `.env` (обратная совместимость сохранена на 100%):
 
 | Переменная | Описание | По умолчанию |
 |------------|----------|--------------|
 | `BOT_TOKEN` | Токен Telegram-бота (обязательно) | — |
-| `ADMIN_ID` | ID администратора для расширенных возможностей | `0` |
-| `ALLOWED_CHAT_IDS` | Белый список ID чатов/каналов через запятую | *(пусто = все)* |
-| `AUTO_ALLOW_MEMBER_CHATS` | `true` — работать везде; `false` — только из ALLOWED_CHAT_IDS | `true` |
-| `CACHE_CHANNEL_ID` | ID канала для кэширования медиа (опционально) | `0` |
-| `MAX_FILE_SIZE_MB` | Максимальный размер файла для отправки | `50` |
-| `FILE_CLEANUP_INTERVAL` | Время жизни временных файлов в минутах | `10` |
-| `DATABASE_PATH` | Путь к базе данных SQLite | `data/bot.db` |
-| `DOWNLOADS_PATH` | Папка для временных файлов | `downloads` |
-| `YTDLP_PROXY` | HTTP/SOCKS-прокси для обоих загрузчиков | *(пусто)* |
-| `YTDLP_IMPERSONATE` | TLS-имперсонация `curl_cffi`, например `chrome`; включать только при необходимости | *(пусто)* |
+| `ADMIN_ID` | ID администратора | `0` |
+| `ALLOWED_CHAT_IDS` | Белый список ID чатов через запятую | *(пусто = все чаты)* |
+| `AUTO_ALLOW_MEMBER_CHATS` | `true` — отвечать в любых группах, где бот состоит | `true` |
+| `CACHE_CHANNEL_ID` | ID канала для кэширования видео (опционально) | `0` |
+| `MAX_FILE_SIZE_MB` | Максимальный размер файла для отправки в Telegram | `50` |
+| `FILE_CLEANUP_INTERVAL` | Интервал очистки временных файлов (в минутах) | `10` |
+| `DATABASE_PATH` | Путь к SQLite файлу | `data/bot.db` |
+| `DOWNLOADS_PATH` | Каталог для временных файлов | `downloads` |
+| `YTDLP_PROXY` | HTTP/SOCKS5 прокси | *(пусто)* |
+| `YTDLP_IMPERSONATE` | TLS-имперсонация браузера (например, `chrome`) | *(пусто)* |
 
-Публичные Instagram-посты и Reels скачиваются анонимно через embed-страницу:
-экспортировать браузерную сессию или настраивать cookies не нужно.
-
-### Режим работы: везде или только в определённых чатах
-
-По умолчанию `AUTO_ALLOW_MEMBER_CHATS=true` — бот отвечает в любом чате, где он является участником.
-
-Если установить `false`, бот будет работать **только** в чатах, ID которых указаны в `ALLOWED_CHAT_IDS`:
-
-```env
-AUTO_ALLOW_MEMBER_CHATS=false
-ALLOWED_CHAT_IDS=-1001234567890,-1009876543210
-```
+---
 
 ## Команды бота
 
-| Команда | Описание | Кто может |
-|---------|----------|-----------|
-| `/start` | Приветствие, инструкция и меню | Все |
-| `/help` | Подробная справка по использованию | Все |
-| `/stats` | Персональная статистика скачиваний | Все |
-| `/top` | Топ пользователей по скачиваниям | Все |
-| `/settings` | Настройки поведения бота в чате | Только админы |
+| Команда | Описание | Доступ |
+|---------|----------|--------|
+| `/start` | Приветствие, обзор возможностей и клавиатура | Все |
+| `/help` | Подробная справка по поддерживаемым сервисам | Все |
+| `/stats` | Личная статистика пользователя по скачиваниям | Все |
+| `/top` | Глобальная таблица лидеров | Все |
+| `/settings` | Меню настроек чата (только ссылки / удаление) | Админы / ЛС |
 
-## Настройки чата
-
-Команда `/settings` доступна **только администраторам** чата/канала. В личных сообщениях доступна всегда.
-
-### «Только чистые ссылки»
-
-- **Включено** — бот отвечает только если сообщение состоит исключительно из ссылки.
-  - ✅ `https://www.tiktok.com/@user/video/123` → бот отвечает
-  - ❌ `Смотри что нашел: https://www.tiktok.com/@user/video/123` → игнорируется
-- **Выключено** — бот парсит любое сообщение, содержащее ссылку.
-
-### «Удалять сообщения со ссылками»
-
-- **Включено** — после отправки видео исходное сообщение пользователя удаляется.
-- **Выключено** — исходное сообщение остаётся в чате.
-
-## Как это работает
-
-### Способ 1: Inline-режим (в любом чате)
-
-Не нужно добавлять бота в группу. Просто:
-
-1. Открой любой чат
-2. Напиши `@your_bot_username https://www.tiktok.com/@user/video/123`
-3. Нажми на результат — медиа отправится в чат!
-
-### Способ 2: Прямое сообщение боту
-
-1. Найди бота в Telegram
-2. Отправь ему ссылку
-3. Получи видео, фото или карусель сразу в ответ
-
-### Поддерживаемые ссылки
-
-- TikTok: `tiktok.com/@user/video/123`, `vm.tiktok.com/xxx`, `vt.tiktok.com/xxx`
-- YouTube: `youtube.com/watch?v=...`, `youtube.com/shorts/...`, `youtu.be/...`
-- Instagram: `instagram.com/reel/...`, `instagram.com/p/...`
-- VK: `vk.com/video...`, `vk.com/clip...`, медиапосты `vk.com/wall...`
-- Другие: X/Twitter, Facebook, Threads, Reddit, Pinterest, Rutube, OK, Twitch, Vimeo, Dailymotion, Likee, Coub и Streamable
+---
 
 ## Структура проекта
 
 ```
 tiktok-bot/
-├── bot/
-│   ├── main.py              # Точка входа: инициализация и polling
-│   ├── config.py            # Загрузка переменных из .env
+├── src/
+│   ├── main.rs                  # Точка входа: логгирование, задачи, запуск поллинга
+│   ├── lib.rs                   # Библиотечный корень
+│   ├── config.rs                # Валидация и парсинг конфигурации .env
+│   ├── db/
+│   │   ├── mod.rs
+│   │   ├── models.rs            # Модели БД (User, Stats, TopUser, Settings)
+│   │   └── database.rs          # Асинхронный SQLite wrapper, миграции, WAL
 │   ├── handlers/
-│   │   ├── commands.py      # /start, /help, /stats, /settings, обработка URL
-│   │   └── inline.py        # Inline-запросы и отправка результата
+│   │   ├── mod.rs
+│   │   ├── commands.rs          # /start, /help, /stats, /top, /settings, обработка ссылок
+│   │   └── inline.rs            # Inline Query обработчик
 │   ├── services/
-│   │   ├── downloader.py    # Скачивание через yt-dlp
-│   │   ├── file_manager.py  # Автоочистка временных файлов
-│   │   └── url_parser.py    # Валидация и нормализация ссылок
-│   ├── database/
-│   │   ├── models.py        # SQLAlchemy-модели и схема
-│   │   ├── db.py            # Асинхронные CRUD-операции
-│   │   └── migrations.py    # Alembic-хелперы
+│   │   ├── mod.rs
+│   │   ├── downloader.rs        # Главный пайплайн скачивания (TikWM -> Embed -> yt-dlp)
+│   │   ├── tiktok_api.rs        # Прямой TikWM API клиент с параллельной загрузкой
+│   │   ├── instagram_extractor.rs # Анонимный быстрый парсер Instagram Embed
+│   │   ├── url_parser.rs        # Регулярные выражения, валидация и нормализация URL
+│   │   ├── rate_limiter.rs      # Sliding window rate limiter
+│   │   └── file_manager.rs      # Асинхронный клинер временных файлов
 │   └── utils/
-│       ├── validators.py    # Валидация входных данных
-│       └── formatters.py    # Форматирование сообщений, размеров, времени
-├── alembic/                 # Миграции базы данных
-│   └── versions/
-│       ├── 20260427_0001_initial_schema.py
-│       └── 20260512_0002_add_chat_settings.py
-├── data/                    # SQLite-база (игнорируется git)
-├── downloads/               # Временные медиа (игнорируются git)
-├── requirements.txt         # Python-зависимости
-├── Dockerfile               # Образ Docker
-├── compose.yml              # Docker Compose конфиг
-├── .env.example             # Шаблон конфигурации
-├── README.md                # Этот файл
-├── LICENSE                  # MIT License
-├── CONTRIBUTING.md          # Руководство по вкладу
-├── SECURITY.md              # Политика безопасности
-└── CHANGELOG.md             # История изменений
+│       ├── mod.rs
+│       └── formatters.rs        # Русская плюрализация, форматирование байт и времени
+├── tests/
+│   └── test_all.rs              # Интеграционные тесты (URL, парсинг, БД, форматирование)
+├── .old/                        # Архив предыдущей реализации на Python
+│   ├── bot/
+│   ├── alembic/
+│   ├── pyproject.toml
+│   └── uv.lock
+├── Cargo.toml                   # Зависимости Rust проекта
+├── Dockerfile                   # Multi-stage production build
+├── compose.yml                  # Docker compose конфигурация
+└── README.md
 ```
-
-## Безопасность
-
-- **Токен бота** хранится только в `.env`, никогда не попадает в код или git
-- **Валидация URL** — принимаются только известные публичные домены из явного allow-list
-- **Rate limiting** — защита от злоупотреблений и спама
-- **Path traversal** — пути файлов нормализуются, запрещён выход за пределы директорий
-- **Белый список чатов** — можно ограничить доступ к боту
-
-Подробнее читай в [SECURITY.md](SECURITY.md).
-
-## Разработка
-
-Хочешь улучшить бота? Круто! Читай [CONTRIBUTING.md](CONTRIBUTING.md).
-
-Кратко:
-```bash
-# Форк → клон → ветка
-git checkout -b feature/my-improvement
-# Код → тест → коммит → push → Pull Request
-```
-
-## Лицензия
-
-Проект распространяется под лицензией [MIT](LICENSE).
-
-## Контакты и вклад
-
-- Нашёл баг? Создай [issue](../../issues)
-- Хочешь предложить идею? Создай [discussion](../../discussions) или [issue](../../issues)
-- Pull requests приветствуются! Читай [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ---
 
-<div align="center">
-  <sub>Сделано с ❤️ для удобного скачивания видео</sub>
-</div>
+## Лицензия
+
+MIT License
