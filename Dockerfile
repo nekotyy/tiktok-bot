@@ -3,8 +3,7 @@ FROM rust:1-bookworm AS builder
 WORKDIR /usr/src/tiktok-bot
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
-COPY tests ./tests
-RUN cargo build --release
+RUN cargo build --release --bin tiktok-bot
 
 FROM denoland/deno:bin-2.9.4 AS deno
 
